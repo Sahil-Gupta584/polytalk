@@ -12,29 +12,3 @@ export function useTranslations() {
     }
   });
 }
-
-export function useCreateTranslation() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async (data: {
-      sourceLanguage: string;
-      targetLanguage: string;
-      sourceText: string;
-      translatedText: string;
-    }) => {
-      const parsed = insertTranslationSchema.parse(data);
-      const res = await fetch("/api/translations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed)
-      });
-      
-      if (!res.ok) throw new Error("Failed to save translation");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/translation'] });
-    }
-  });
-}

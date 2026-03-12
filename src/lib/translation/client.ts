@@ -1,65 +1,54 @@
+import { env } from "../env";
 
-const apiKey = process.env.LINGO_API_KEY || "";
+const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
 
+function codeToName(code: string): string {
+	return languageNames.of(code)?.toLowerCase() || code.toLowerCase();
+}
 
 export async function translateText(
 	text: string,
-	sourceLanguage: string,
-	targetLanguage: string,
+	sourceLocale: string,
+	targetLocale: string,
 ): Promise<string> {
-	const localeMap: Record<string, string> = {
-		english: "en",
-		spanish: "es",
-		french: "fr",
-		german: "de",
-		italian: "it",
-		portuguese: "pt",
-		chinese: "zh",
-		japanese: "ja",
-		korean: "ko",
-		arabic: "ar",
-		russian: "ru",
-		hindi: "hi",
-		dutch: "nl",
-		polish: "pl",
-		turkish: "tr",
-		vietnamese: "vi",
-		thai: "th",
-		indonesian: "id",
-		malay: "ms",
-		czech: "cs",
-		romanian: "ro",
-		hungarian: "hu",
-		greek: "el",
-		swedish: "sv",
-		danish: "da",
-		finnish: "fi",
-		norwegian: "no",
-		ukrainian: "uk",
-		hebrew: "he",
-	};
+	if (!sourceLocale || !targetLocale) {
+		throw new Error("Missing source or target language for translation");
+	}
 
-	const sourceLocale =
-		localeMap[sourceLanguage.toLowerCase()] || sourceLanguage.toLowerCase();
-	const targetLocale =
-		localeMap[targetLanguage.toLowerCase()] || targetLanguage.toLowerCase();
+	console.log("[translation client] request payload", {
+		text,
+		sourceLocale,
+		targetLocale,
+	});
 
 	const response = await fetch("https://api.lingo.dev/process/localize", {
 		method: "POST",
 		headers: {
-			"X-API-Key": apiKey,
+			"X-API-Key": env.LINGODOTDEV_API_KEY,
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({
 			engineId: "eng_JtC1dHnG9n4zxcuf",
 			sourceLocale,
 			targetLocale,
-			data: text,
+			data: {text},
 		}),
 	});
 
+	if (!response.ok) {
+		const errorText = await response.text();
+		console.error("[translation client] lingo request failed", {
+			status: response.status,
+			statusText: response.statusText,
+			body: errorText,
+		});
+		throw new Error(`Translation API failed with status ${response.status}`);
+	}
+
 	const { data } = await response.json();
-  console.log({data});
-  
-	return data;
+	console.log("[translation client] response", { data });
+
+	return data?.text;
 }
+
+export { codeToName };
