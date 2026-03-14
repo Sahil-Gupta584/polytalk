@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import langs from "langs";
 import {
 	ArrowDownUp,
@@ -9,9 +9,9 @@ import {
 	MicOff,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
 import { HistoryModal } from "@/components/HistoryModal";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslationStream } from "@/hooks/use-translation-stream";
 import { useVoiceDetection } from "@/hooks/use-voice-detection";
 
 const LANGUAGES = langs.codes("1");
@@ -26,31 +26,132 @@ function getFallbackSecondaryLanguage(nativeLanguage: string) {
 	return LANGUAGES.find((language) => language !== nativeLanguage) || "";
 }
 
+function langToLocale(lang: string) {
+	// Use user's first preferred language's locale, fallback to common defaults
+	const userLocale = navigator.languages?.[0] || navigator.language || "en-US";
+	const langPrefix = lang.toLowerCase().split("-")[0]; // Extract base lang (e.g., 'en')
+	return userLocale.startsWith(langPrefix)
+		? userLocale
+		: `${lang.toLowerCase()}-US`;
+}
+
+function voiceMatchesLanguage(
+	voice: SpeechSynthesisVoice | null | undefined,
+	languageCode: string,
+): boolean {
+	if (!voice) {
+		return false;
+	}
+
+	const normalizedTarget = languageCode.toLowerCase();
+	const normalizedVoiceLang = voice.lang.toLowerCase();
+
+	return (
+		normalizedVoiceLang === normalizedTarget ||
+		normalizedVoiceLang.startsWith(`${normalizedTarget}-`)
+	);
+}
+
 export const Route = createFileRoute("/translation")({
 	component: Translation,
 });
 
 export default function Translation() {
-	const [, setLocation] = useLocation();
 	const { toast } = useToast();
 
 	const [showHistory, setShowHistory] = useState(false);
 
 	const [nativeLanguage, setNativeLanguage] = useState("en");
-	const [secondaryLanguage, setSecondaryLanguage] = useState("ja");
+	const [secondaryLanguage, setSecondaryLanguage] = useState("hi");
 
 	const [userText, setUserText] = useState("");
 	const [translatedText, setTranslatedText] = useState("");
 	const [detectedLanguage, setDetectedLanguage] = useState("");
 	const [isUserSpeakingNative, setIsUserSpeakingNative] = useState(true);
+	const [availableVoices, setAvailableVoices] = useState<
+		SpeechSynthesisVoice[]
+	>([]);
 
 	const isProcessingRef = useRef(false);
+	const ttsRequestIdRef = useRef(0);
+	const {
+		isStreaming,
+		startStream,
+		stopStream: stopTranslationStream,
+	} = useTranslationStream();
+	const {
+		isListening,
+		isVoiceDetected,
+		isProcessing: isVoiceProcessing,
+		setIsProcessing: setIsVoiceProcessing,
+		startListening,
+		stopListening,
+	} = useVoiceDetection({
+		onVoiceStart: () => {
+			setUserText("Listening...");
+		},
+		onVoiceEnd: (audioBlob) => {
+			processAudio(audioBlob);
+		},
+	});
 
 	useEffect(() => {
 		if (secondaryLanguage === nativeLanguage) {
 			setSecondaryLanguage(getFallbackSecondaryLanguage(nativeLanguage));
 		}
 	}, [nativeLanguage, secondaryLanguage]);
+
+	useEffect(() => {
+		if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+			return;
+		}
+
+		const loadVoices = () => {
+			setAvailableVoices(window.speechSynthesis.getVoices());
+		};
+
+		loadVoices();
+		window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+
+		return () => {
+			window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+		};
+	}, []);
+
+	const getVoices = async () => {
+		if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+			return [] as SpeechSynthesisVoice[];
+		}
+
+		const existingVoices = window.speechSynthesis.getVoices();
+		if (existingVoices.length > 0) {
+			return existingVoices;
+		}
+
+		return await new Promise<SpeechSynthesisVoice[]>((resolve) => {
+			const timeoutId = window.setTimeout(() => {
+				window.speechSynthesis.removeEventListener(
+					"voiceschanged",
+					handleVoicesChanged,
+				);
+				resolve(window.speechSynthesis.getVoices());
+			}, 1000);
+
+			const handleVoicesChanged = () => {
+				window.clearTimeout(timeoutId);
+				window.speechSynthesis.removeEventListener(
+					"voiceschanged",
+					handleVoicesChanged,
+				);
+				resolve(window.speechSynthesis.getVoices());
+			};
+
+			window.speechSynthesis.addEventListener(
+				"voiceschanged",
+				handleVoicesChanged,
+			);
+		});
+	};
 
 	const processTestAudio = async () => {
 		if (isProcessingRef.current) return;
@@ -90,35 +191,43 @@ export default function Translation() {
 		}
 
 		isProcessingRef.current = true;
+		setIsVoiceProcessing(true);
 
 		try {
 			setUserText("Processing...");
 			setTranslatedText("");
+			setDetectedLanguage("");
 
-			const formData = new FormData();
-			formData.append("audio", audioFile);
-			formData.append("nativeLanguage", nativeLanguage);
-			formData.append("secondaryLanguage", secondaryLanguage);
-
-			const res = await fetch("/api/translate/audio", {
-				method: "POST",
-				body: formData,
-			});
-
-			if (!res.ok) {
-				throw new Error(`HTTP error! status: ${res.status}`);
-			}
-
-			const data = await res.json();
-
-			if (data.error) {
-				throw new Error(data.error);
-			}
-
-			setUserText(data.userTranscript);
-			setDetectedLanguage(data.detectedLanguage);
-			setIsUserSpeakingNative(data.isUserSpeakingNative);
-			setTranslatedText(data.translatedText);
+			await startStream(
+				audioFile,
+				nativeLanguage,
+				secondaryLanguage,
+				(text) => {
+					setUserText(text || "Processing...");
+				},
+				(language, isUserNative) => {
+					setDetectedLanguage(language);
+					setIsUserSpeakingNative(isUserNative);
+				},
+				(text) => {
+					setTranslatedText(text);
+				},
+				(result) => {
+					if (result.translatedText.trim()) {
+						void playTranslatedAudio(result.translatedText);
+					}
+				},
+				(err) => {
+					console.error("Error processing audio:", err);
+					toast({
+						title: "Translation Failed",
+						description: err.message,
+						variant: "destructive",
+					});
+					setUserText("Failed.");
+					setTranslatedText("Error");
+				},
+			);
 		} catch (err) {
 			console.error("Error processing audio:", err);
 			toast({
@@ -131,18 +240,107 @@ export default function Translation() {
 			setTranslatedText("Error");
 		} finally {
 			isProcessingRef.current = false;
+			setIsVoiceProcessing(false);
 		}
 	};
 
-	const { isListening, isVoiceDetected, startListening, stopListening } =
-		useVoiceDetection({
-			onVoiceStart: () => {
-				setUserText("Listening...");
-			},
-			onVoiceEnd: (audioBlob) => {
-				processAudio(audioBlob);
-			},
-		});
+	const playTranslatedAudio = async (text: string) => {
+		if (!text.trim()) return;
+
+		const requestId = ++ttsRequestIdRef.current;
+
+		try {
+			if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+				return;
+			}
+
+			window.speechSynthesis.cancel();
+
+			if (requestId !== ttsRequestIdRef.current) {
+				return;
+			}
+			const utterance = new SpeechSynthesisUtterance(text);
+			const voices = (
+				availableVoices.length ? availableVoices : await getVoices()
+			) as SpeechSynthesisVoice[];
+			const preferredVoice =
+				voices.find((voice) =>
+					voice.lang
+						.toLowerCase()
+						.startsWith(`${secondaryLanguage.toLowerCase()}-`),
+				) ||
+				voices.find(
+					(voice) =>
+						voice.lang.toLowerCase() === secondaryLanguage.toLowerCase(),
+				);
+			const fallbackVoice =
+				voices.find((voice) => voice.default) || voices[0] || null;
+			const selectedVoice = preferredVoice || fallbackVoice;
+
+			if (selectedVoice) {
+				utterance.voice = selectedVoice;
+				utterance.lang = selectedVoice.lang;
+			} else {
+				utterance.lang = langToLocale(secondaryLanguage);
+			}
+
+			const shouldUseBrowserVoice = voiceMatchesLanguage(
+				selectedVoice,
+				secondaryLanguage,
+			);
+
+			if (!shouldUseBrowserVoice) {
+				const res = await fetch("/api/translate/audio/tts", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						text,
+						languageCode: langToLocale(secondaryLanguage),
+					}),
+				});
+
+				if (!res.ok) {
+					throw new Error(`Google TTS failed with status ${res.status}`);
+				}
+
+				const data = (await res.json()) as { audio?: string };
+				if (!data.audio) {
+					throw new Error("Google TTS returned no audio");
+				}
+
+				const audio = new Audio(`data:audio/mpeg;base64,${data.audio}`);
+				await audio.play();
+				return;
+			}
+
+			utterance.rate = 0.95;
+			utterance.volume = 1;
+			utterance.pitch = 1;
+
+			utterance.onstart = () => {
+				console.log("Speech synthesis started", {
+					text,
+					lang: utterance.lang,
+					voice: utterance.voice?.name || "default",
+				});
+			};
+			utterance.onend = () => {
+				if (ttsRequestIdRef.current === requestId) {
+					ttsRequestIdRef.current = 0;
+				}
+			};
+			utterance.onerror = (event) => {
+				console.error("Speech synthesis failed:", event);
+			};
+
+			window.speechSynthesis.resume();
+			window.speechSynthesis.speak(utterance);
+		} catch (error) {
+			console.error("Error playing translated audio:", error);
+		}
+	};
 
 	const toggleListening = async () => {
 		if (isListening) {
@@ -173,19 +371,22 @@ export default function Translation() {
 	useEffect(() => {
 		return () => {
 			stopListening();
+			stopTranslationStream();
+			if (typeof window !== "undefined" && "speechSynthesis" in window) {
+				window.speechSynthesis.cancel();
+			}
 		};
-	}, [stopListening]);
+	}, [stopListening, stopTranslationStream]);
 
 	return (
 		<>
 			<div className="h-[100dvh] w-full flex flex-col overflow-hidden bg-gradient-to-b from-zinc-900 to-zinc-950 font-sans">
 				<div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-					<button
-						onClick={() => setLocation("/")}
-						className="text-zinc-400 hover:text-white transition-colors"
-					>
-						<ArrowLeft className="w-6 h-6" />
-					</button>
+					<Link to="/">
+						<button className="text-zinc-400 hover:text-white transition-colors">
+							<ArrowLeft className="w-6 h-6" />
+						</button>
+					</Link>
 
 					<div className="flex items-center gap-2">
 						<select
@@ -226,13 +427,17 @@ export default function Translation() {
 				</div>
 
 				<div className="flex-1 flex flex-col items-center justify-center p-6">
-					{isProcessingRef.current && (
+					{(isProcessingRef.current || isStreaming || isVoiceProcessing) && (
 						<div className="mb-6 px-4 py-2 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
-							Processing...
+							{isStreaming
+								? "Streaming translation..."
+								: isVoiceProcessing
+									? "Processing voice..."
+									: "Processing..."}
 						</div>
 					)}
 
-					{detectedLanguage && !isProcessingRef.current && (
+					{detectedLanguage && !isProcessingRef.current && !isStreaming && (
 						<div
 							className={`mb-6 px-4 py-2 rounded-full text-sm font-medium ${
 								isUserSpeakingNative
@@ -305,11 +510,11 @@ export default function Translation() {
 						)}
 					</button>
 					<p className="mt-4 text-sm text-zinc-500">
-						{isListening
-							? isVoiceDetected
-								? "Listening... speak now"
-								: "Listening for voice..."
-							: "Tap to start listening"}
+						{isProcessingRef.current || isStreaming || isVoiceProcessing
+							? "Translating"
+							: isListening
+								? "Listening"
+								: "Tap to start listening"}
 					</p>
 				</div>
 			</div>

@@ -27,9 +27,20 @@ export function useVoiceDetection({
 
 	const startListening = useCallback(async (micId?: string) => {
 		try {
-			const constraints: MediaStreamConstraints = { audio: true };
+			const constraints: MediaStreamConstraints = {
+				audio: {
+					echoCancellation: true,
+					noiseSuppression: true,
+					autoGainControl: true,
+				},
+			};
 			if (micId && micId !== "default") {
-				constraints.audio = { deviceId: { exact: micId } };
+				constraints.audio = {
+					deviceId: { exact: micId },
+					echoCancellation: true,
+					noiseSuppression: true,
+					autoGainControl: true,
+				};
 			}
 
 			const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -103,10 +114,16 @@ export function useVoiceDetection({
 			onVoiceStart?.();
 
 			const stream = mediaStreamRef.current;
+
 			if (stream) {
-				const recorder = new MediaRecorder(stream, {
-					mimeType: "audio/webm;codecs=opus",
-				});
+				const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+					? "audio/webm;codecs=opus"
+					: MediaRecorder.isTypeSupported("audio/webm")
+						? "audio/webm"
+						: "";
+				const recorder = mimeType
+					? new MediaRecorder(stream, { mimeType })
+					: new MediaRecorder(stream);
 				mediaRecorderRef.current = recorder;
 				chunksRef.current = [];
 
@@ -117,14 +134,16 @@ export function useVoiceDetection({
 				};
 
 				recorder.onstop = () => {
-					const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+					const blob = new Blob(chunksRef.current, {
+						type: recorder.mimeType || "audio/webm",
+					});
 					if (chunksRef.current.length > 0) {
 						onVoiceEnd?.(blob);
 					}
 					chunksRef.current = [];
 				};
 
-				recorder.start(100);
+				recorder.start();
 			}
 
 			if (silenceTimeoutRef.current) {

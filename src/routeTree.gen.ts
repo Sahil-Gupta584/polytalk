@@ -21,6 +21,8 @@ import { Route as DemoSentryTestingRouteImport } from './routes/demo/sentry.test
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiTranslateAudioIndexRouteImport } from './routes/api/translate/audio/index'
 import { Route as ApiConversationsIdIndexRouteImport } from './routes/api/conversations/$id/index'
+import { Route as ApiTranslateAudioTtsRouteImport } from './routes/api/translate/audio/tts'
+import { Route as ApiTranslateAudioStreamRouteImport } from './routes/api/translate/audio/stream'
 import { Route as ApiConversationsIdMessagesIndexRouteImport } from './routes/api/conversations/$id/messages/index'
 
 const TranslationRoute = TranslationRouteImport.update({
@@ -83,6 +85,16 @@ const ApiConversationsIdIndexRoute = ApiConversationsIdIndexRouteImport.update({
   path: '/api/conversations/$id/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTranslateAudioTtsRoute = ApiTranslateAudioTtsRouteImport.update({
+  id: '/api/translate/audio/tts',
+  path: '/api/translate/audio/tts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTranslateAudioStreamRoute = ApiTranslateAudioStreamRouteImport.update({
+  id: '/api/translate/audio/stream',
+  path: '/api/translate/audio/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiConversationsIdMessagesIndexRoute =
   ApiConversationsIdMessagesIndexRouteImport.update({
     id: '/api/conversations/$id/messages/',
@@ -101,6 +113,8 @@ export interface FileRoutesByFullPath {
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations/': typeof ApiConversationsIndexRoute
   '/api/translation/': typeof ApiTranslationIndexRoute
+  '/api/translate/audio/stream': typeof ApiTranslateAudioStreamRoute
+  '/api/translate/audio/tts': typeof ApiTranslateAudioTtsRoute
   '/api/conversations/$id/': typeof ApiConversationsIdIndexRoute
   '/api/translate/audio/': typeof ApiTranslateAudioIndexRoute
   '/api/conversations/$id/messages/': typeof ApiConversationsIdMessagesIndexRoute
@@ -116,6 +130,8 @@ export interface FileRoutesByTo {
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations': typeof ApiConversationsIndexRoute
   '/api/translation': typeof ApiTranslationIndexRoute
+  '/api/translate/audio/stream': typeof ApiTranslateAudioStreamRoute
+  '/api/translate/audio/tts': typeof ApiTranslateAudioTtsRoute
   '/api/conversations/$id': typeof ApiConversationsIdIndexRoute
   '/api/translate/audio': typeof ApiTranslateAudioIndexRoute
   '/api/conversations/$id/messages': typeof ApiConversationsIdMessagesIndexRoute
@@ -132,6 +148,8 @@ export interface FileRoutesById {
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations/': typeof ApiConversationsIndexRoute
   '/api/translation/': typeof ApiTranslationIndexRoute
+  '/api/translate/audio/stream': typeof ApiTranslateAudioStreamRoute
+  '/api/translate/audio/tts': typeof ApiTranslateAudioTtsRoute
   '/api/conversations/$id/': typeof ApiConversationsIdIndexRoute
   '/api/translate/audio/': typeof ApiTranslateAudioIndexRoute
   '/api/conversations/$id/messages/': typeof ApiConversationsIdMessagesIndexRoute
@@ -149,6 +167,8 @@ export interface FileRouteTypes {
     | '/demo/sentry/testing'
     | '/api/conversations/'
     | '/api/translation/'
+    | '/api/translate/audio/stream'
+    | '/api/translate/audio/tts'
     | '/api/conversations/$id/'
     | '/api/translate/audio/'
     | '/api/conversations/$id/messages/'
@@ -164,6 +184,8 @@ export interface FileRouteTypes {
     | '/demo/sentry/testing'
     | '/api/conversations'
     | '/api/translation'
+    | '/api/translate/audio/stream'
+    | '/api/translate/audio/tts'
     | '/api/conversations/$id'
     | '/api/translate/audio'
     | '/api/conversations/$id/messages'
@@ -179,6 +201,8 @@ export interface FileRouteTypes {
     | '/demo/sentry/testing'
     | '/api/conversations/'
     | '/api/translation/'
+    | '/api/translate/audio/stream'
+    | '/api/translate/audio/tts'
     | '/api/conversations/$id/'
     | '/api/translate/audio/'
     | '/api/conversations/$id/messages/'
@@ -195,6 +219,8 @@ export interface RootRouteChildren {
   DemoSentryTestingRoute: typeof DemoSentryTestingRoute
   ApiConversationsIndexRoute: typeof ApiConversationsIndexRoute
   ApiTranslationIndexRoute: typeof ApiTranslationIndexRoute
+  ApiTranslateAudioStreamRoute: typeof ApiTranslateAudioStreamRoute
+  ApiTranslateAudioTtsRoute: typeof ApiTranslateAudioTtsRoute
   ApiConversationsIdIndexRoute: typeof ApiConversationsIdIndexRoute
   ApiTranslateAudioIndexRoute: typeof ApiTranslateAudioIndexRoute
   ApiConversationsIdMessagesIndexRoute: typeof ApiConversationsIdMessagesIndexRoute
@@ -286,6 +312,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiConversationsIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/translate/audio/tts': {
+      id: '/api/translate/audio/tts'
+      path: '/api/translate/audio/tts'
+      fullPath: '/api/translate/audio/tts'
+      preLoaderRoute: typeof ApiTranslateAudioTtsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/translate/audio/stream': {
+      id: '/api/translate/audio/stream'
+      path: '/api/translate/audio/stream'
+      fullPath: '/api/translate/audio/stream'
+      preLoaderRoute: typeof ApiTranslateAudioStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/conversations/$id/messages/': {
       id: '/api/conversations/$id/messages/'
       path: '/api/conversations/$id/messages'
@@ -307,6 +347,8 @@ const rootRouteChildren: RootRouteChildren = {
   DemoSentryTestingRoute: DemoSentryTestingRoute,
   ApiConversationsIndexRoute: ApiConversationsIndexRoute,
   ApiTranslationIndexRoute: ApiTranslationIndexRoute,
+  ApiTranslateAudioStreamRoute: ApiTranslateAudioStreamRoute,
+  ApiTranslateAudioTtsRoute: ApiTranslateAudioTtsRoute,
   ApiConversationsIdIndexRoute: ApiConversationsIdIndexRoute,
   ApiTranslateAudioIndexRoute: ApiTranslateAudioIndexRoute,
   ApiConversationsIdMessagesIndexRoute: ApiConversationsIdMessagesIndexRoute,

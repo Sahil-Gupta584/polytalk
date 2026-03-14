@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import LanguageDetect from "languagedetect";
 import OpenAI from "openai";
 import { storage } from "#/db/storage";
-import { openai } from "#/lib/audio";
 import { codeToName, translateText } from "#/lib/translation/client";
 
 const languageDetector = new LanguageDetect();
@@ -63,14 +62,14 @@ export const Route = createFileRoute("/api/translate/audio/")({
 						type: audioFile.type,
 					});
 
-					const transcription = await openai.audio.transcriptions.create({
-						file: await OpenAI.toFile(buffer, fileName),
-						model: "gpt-4o-mini-transcribe",
-						response_format: "json",
-					});
+					// const transcription = await openai.audio.transcriptions.create({
+					// 	file: await OpenAI.toFile(buffer, fileName),
+					// 	model: "gpt-4o-mini-transcribe",
+					// 	response_format: "json",
+					// });
 
-					const userTranscript = transcription.text;
-					
+					const userTranscript = 'transcription.text';
+
 					const detectedLanguage = detectLanguageFromTranscript(
 						userTranscript,
 						[nativeLanguage, secondaryLanguage],
@@ -132,46 +131,19 @@ export const Route = createFileRoute("/api/translate/audio/")({
 						targetLanguage,
 					);
 
-					const stream = await openai.chat.completions.create({
-						model: "gpt-audio",
-						modalities: ["text", "audio"],
-						audio: { voice: "alloy", format: "pcm16" },
-						messages: [
-							{
-								role: "system",
-								content:
-									"You are a text-to-speech engine. Simply speak the provided text verbatim with natural intonation.",
-							},
-							{
-								role: "user",
-								content: translatedText,
-							},
-						],
-						stream: true,
-					});
-
-					let assistantTranscript = "";
-					let fullAudioData = "";
-
-					for await (const chunk of stream) {
-						const delta = chunk.choices?.[0]?.delta as any;
-						if (!delta) continue;
-
-						if (delta?.audio?.transcript) {
-							assistantTranscript += delta.audio.transcript;
-						}
-
-						if (delta?.audio?.data) {
-							fullAudioData += delta.audio.data;
-						}
-					}
-
-					await storage.createTranslation({
-						sourceLanguage,
-						targetLanguage,
-						sourceText: userTranscript,
-						translatedText: assistantTranscript,
-					});
+					void storage
+						.createTranslation({
+							sourceLanguage,
+							targetLanguage,
+							sourceText: userTranscript,
+							translatedText,
+						})
+						.catch((storageError) => {
+							console.error(
+								"[audio translate] failed to store translation",
+								storageError,
+							);
+						});
 
 					return new Response(
 						JSON.stringify({
@@ -179,8 +151,7 @@ export const Route = createFileRoute("/api/translate/audio/")({
 							detectedLanguage: detectedLanguage,
 							isUserSpeakingNative: detectedLanguage === nativeLanguage,
 							userTranscript,
-							translatedText: assistantTranscript,
-							audio: fullAudioData,
+							translatedText,
 						}),
 					);
 				} catch (error) {

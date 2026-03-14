@@ -1,123 +1,133 @@
 import { useCallback, useRef, useState } from "react";
 
-function base64ToFloat32Array(base64: string): Float32Array {
-	const binary = atob(base64);
-	const len = binary.length;
-	const bytes = new Uint8Array(len);
-	for (let i = 0; i < len; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	const pcm16 = new Int16Array(bytes.buffer);
-	const float32 = new Float32Array(pcm16.length);
-	for (let i = 0; i < pcm16.length; i++) {
-		float32[i] = pcm16[i] / 32768;
-	}
-	return float32;
+function getAudioExtension(mimeType: string) {
+	if (mimeType.includes("mpeg")) return "mp3";
+	if (mimeType.includes("mp4")) return "mp4";
+	if (mimeType.includes("ogg")) return "ogg";
+	if (mimeType.includes("wav")) return "wav";
+	return "webm";
 }
 
 export function useTranslationStream() {
 	const [isStreaming, setIsStreaming] = useState(false);
-	const audioCtxRef = useRef<AudioContext | null>(null);
-	const nextPlayTimeRef = useRef<number>(0);
+	const abortControllerRef = useRef<AbortController | null>(null);
 
 	const startStream = useCallback(
 		async (
 			audioBlob: Blob,
 			nativeLanguage: string,
-			secondaryLanguage: string | undefined,
-			speakerId: string,
+			secondaryLanguage: string,
 			onUserTranscript: (text: string) => void,
 			onDetectedLanguage: (language: string, isUserNative: boolean) => void,
 			onTranscript: (text: string) => void,
-			onDone: () => void,
+			onDone: (result: {
+				userTranscript: string;
+				translatedText: string;
+				detectedLanguage: string;
+				isUserSpeakingNative: boolean;
+			}) => void,
 			onError: (err: Error) => void,
 		) => {
 			setIsStreaming(true);
 
 			try {
-				if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
-					audioCtxRef.current = new AudioContext({ sampleRate: 24000 });
-				}
-				const ctx = audioCtxRef.current;
-				if (ctx.state === "suspended") await ctx.resume();
-
-				if (
-					speakerId &&
-					speakerId !== "default" &&
-					typeof (ctx as any).setSinkId === "function"
-				) {
-					try {
-						await (ctx as any).setSinkId(speakerId);
-					} catch (e) {
-						console.warn("setSinkId failed or not permitted", e);
-					}
-				}
-
-				nextPlayTimeRef.current = ctx.currentTime + 0.1;
-
-				const reader = new FileReader();
-				reader.readAsDataURL(audioBlob);
-
-				reader.onloadend = async () => {
-					try {
-						const base64Audio = (reader.result as string).split(",")[1];
-
-						const res = await fetch("/api/translate/audio", {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								audio: base64Audio,
-								nativeLanguage,
-								secondaryLanguage: secondaryLanguage || null,
-							}),
-						});
-
-						if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-
-						const data = await res.json();
-
-						if (data.error) {
-							throw new Error(data.error);
-						}
-
-						onUserTranscript(data.userTranscript);
-						onDetectedLanguage(
-							data.detectedLanguage,
-							data.isUserSpeakingNative,
-						);
-						onTranscript(data.translatedText);
-
-						if (data.audio) {
-							const pcmFloat = base64ToFloat32Array(data.audio);
-							const audioBuffer = ctx.createBuffer(1, pcmFloat.length, 24000);
-							audioBuffer.getChannelData(0).set(pcmFloat);
-
-							const source = ctx.createBufferSource();
-							source.buffer = audioBuffer;
-							source.connect(ctx.destination);
-
-							const playTime = Math.max(
-								ctx.currentTime,
-								nextPlayTimeRef.current,
+				const formData = new FormData();
+				const audioFile =
+					audioBlob instanceof File
+						? audioBlob
+						: new File(
+								[audioBlob],
+								`recording.${getAudioExtension(audioBlob.type || "audio/webm")}`,
+								{
+									type: audioBlob.type || "audio/webm",
+								},
 							);
-							source.start(playTime);
-							nextPlayTimeRef.current = playTime + audioBuffer.duration;
+				formData.append("audio", audioFile);
+				formData.append("nativeLanguage", nativeLanguage);
+				formData.append("secondaryLanguage", secondaryLanguage);
+
+				const abortController = new AbortController();
+				abortControllerRef.current = abortController;
+
+				const res = await fetch("/api/translate/audio/stream", {
+					method: "POST",
+					body: formData,
+					signal: abortController.signal,
+				});
+
+				if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+				if (!res.body) throw new Error("Streaming response body is missing");
+
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+
+					buffer += decoder.decode(value, { stream: true });
+					const events = buffer.split("\n\n");
+					buffer = events.pop() || "";
+
+					for (const rawEvent of events) {
+						const lines = rawEvent.split("\n");
+						const eventLine = lines.find((line) => line.startsWith("event: "));
+						const dataLine = lines.find((line) => line.startsWith("data: "));
+						if (!eventLine || !dataLine) continue;
+
+						const eventName = eventLine.slice(7);
+						const data = JSON.parse(dataLine.slice(6));
+
+						if (eventName === "transcript.delta") {
+							onUserTranscript(data.text);
 						}
 
-						onDone();
-					} catch (error) {
-						onError(error instanceof Error ? error : new Error(String(error)));
-					} finally {
-						setIsStreaming(false);
+						if (eventName === "transcript.final") {
+							onUserTranscript(data.text);
+							onDetectedLanguage(
+								data.detectedLanguage,
+								data.isUserSpeakingNative,
+							);
+						}
+
+						if (
+							eventName === "translation.delta" ||
+							eventName === "translation.final"
+						) {
+							onTranscript(data.text);
+						}
+
+						if (eventName === "done") {
+							onUserTranscript(data.userTranscript);
+							onDetectedLanguage(
+								data.detectedLanguage,
+								data.isUserSpeakingNative,
+							);
+							onTranscript(data.translatedText);
+							onDone(data);
+						}
+
+						if (eventName === "error") {
+							throw new Error(data.message || "Streaming translation failed");
+						}
 					}
-				};
+				}
 			} catch (err) {
 				onError(err instanceof Error ? err : new Error(String(err)));
+			} finally {
+				abortControllerRef.current = null;
 				setIsStreaming(false);
 			}
 		},
 		[],
 	);
 
-	return { startStream, isStreaming };
+	const stopStream = useCallback(() => {
+		abortControllerRef.current?.abort();
+		abortControllerRef.current = null;
+		setIsStreaming(false);
+	}, []);
+
+	return { startStream, stopStream, isStreaming };
 }
