@@ -1,11 +1,33 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import speech from "@google-cloud/speech";
 import { createFileRoute } from "@tanstack/react-router";
 import LanguageDetect from "languagedetect";
-import OpenAI from "openai";
 import { storage } from "#/db/storage";
 import { detectAudioFormat, openai } from "#/lib/audio";
 import { env } from "#/lib/env";
-import { codeToName } from "#/lib/translation/client";
+import { codeToName, translateText } from "#/lib/translation/client";
 
+const defaultLocales: Record<string, string> = {
+	en: "en-US",
+	hi: "hi-IN",
+	fr: "fr-FR",
+	de: "de-DE",
+	es: "es-ES",
+	pt: "pt-BR",
+	zh: "zh-CN",
+};
+
+export function langToLocale(lang: string) {
+	const userLocale = navigator.languages?.[0] || navigator.language || "en-US";
+	const langPrefix = lang.toLowerCase().split("-")[0];
+
+	if (userLocale.toLowerCase().startsWith(langPrefix)) {
+		return userLocale;
+	}
+
+	return defaultLocales[langPrefix] || `${langPrefix}-US`;
+}
 const languageDetector = new LanguageDetect();
 
 function detectLanguageFromTranscript(
@@ -54,67 +76,53 @@ function getErrorMessage(error: unknown) {
 	return "Streaming translation failed";
 }
 
-function langToLocale(lang: string) {
-	try {
-		return new Intl.Locale(lang).maximize().toString();
-	} catch {
-		return lang;
-	}
-}
+const serviceAccountPath = resolve(
+	process.cwd(),
+	env.GOOGLE_SERVICE_ACCOUNT_FILE,
+);
+const sttClient = existsSync(serviceAccountPath)
+	? new speech.v2.SpeechClient({
+			keyFilename: serviceAccountPath,
+		})
+	: null;
 
 async function transcribeWithGoogle(
 	audioBuffer: Buffer,
 	languageCodes: string[],
 ) {
-	if (!env.GOOGLE_STT_API_KEY || !env.GOOGLE_CLOUD_PROJECT_ID) {
+	if (!env.GOOGLE_CLOUD_PROJECT_ID) {
 		throw new Error(
-			"Google STT is not configured. Set GOOGLE_STT_API_KEY and GOOGLE_CLOUD_PROJECT_ID.",
+			"Google STT is not configured. Set GOOGLE_CLOUD_PROJECT_ID.",
 		);
 	}
 
-	const response = await fetch(
-		`https://speech.googleapis.com/v2/projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/global/recognizers/_:recognize?key=${env.GOOGLE_STT_API_KEY}`,
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				config: {
-					autoDecodingConfig: {},
-					languageCodes,
-					model: "short",
-				},
-				content: audioBuffer.toString("base64"),
-			}),
-		},
-	);
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		console.error("[google stt] request failed", {
-			status: response.status,
-			body: errorText,
-			languageCodes,
-		});
-		throw new Error(`Google STT failed with status ${response.status}`);
+	if (!sttClient) {
+		throw new Error(
+			`Google STT service account file not found at ${serviceAccountPath}`,
+		);
 	}
 
-	const data = (await response.json()) as {
-		results?: Array<{
-			alternatives?: Array<{
-				transcript?: string;
-			}>;
-		}>;
-	};
+	const [response] = await sttClient.recognize({
+		recognizer: `projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/global/recognizers/_`,
+		config: {
+			autoDecodingConfig: {},
+			languageCodes,
+			model: "short",
+		},
+		content: audioBuffer,
+	});
 
-	const transcript = data.results
+	const transcript = response.results
 		?.flatMap((result) => result.alternatives || [])
 		.map((alternative) => alternative.transcript || "")
 		.join(" ")
 		.trim();
 
 	if (!transcript) {
+		console.error("[google stt] empty transcript", {
+			languageCodes,
+			resultCount: response.results?.length || 0,
+		});
 		throw new Error("Google STT returned no transcript");
 	}
 
@@ -152,6 +160,7 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 						langToLocale(nativeLanguage),
 						langToLocale(secondaryLanguage),
 					];
+					console.log({ nativeLanguage, secondaryLanguage, languageCodes });
 
 					if (detectedFormat === "unknown") {
 						return new Response(
@@ -178,14 +187,6 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 										audioBuffer,
 										languageCodes,
 									);
-
-									// const transcription =
-										await openai.audio.transcriptions.create({
-											file: await OpenAI.toFile(audioBuffer, fileName),
-											model: "whisper-1",
-											response_format: "json",
-										});
-									// const userTranscript = transcription.text;
 
 									enqueue("transcript.delta", { text: userTranscript });
 
@@ -221,32 +222,11 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 										return;
 									}
 
-									const translationStream =
-										await openai.chat.completions.create({
-											model: "gpt-4o-mini",
-											messages: [
-												{
-													role: "system",
-													content: `Translate the user's text from ${codeToName(sourceLanguage)} to ${codeToName(targetLanguage)}. Return only the translated text.`,
-												},
-												{
-													role: "user",
-													content: userTranscript,
-												},
-											],
-											stream: true,
-										});
-
-									let translatedText = "";
-
-									for await (const chunk of translationStream) {
-										const delta = chunk.choices?.[0]?.delta?.content;
-										if (!delta) continue;
-										translatedText += delta;
-										enqueue("translation.delta", {
-											text: translatedText,
-										});
-									}
+									const translatedText = await translateText(
+										userTranscript,
+										nativeLanguage,
+										targetLanguage,
+									);
 
 									enqueue("translation.final", {
 										text: translatedText,
