@@ -9,9 +9,10 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TranslationRouteImport } from './routes/translation'
+import { Route as MicCheckRouteImport } from './routes/mic-check'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TranslateIndexRouteImport } from './routes/translate/index'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoDrizzleRouteImport } from './routes/demo/drizzle'
 import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
@@ -25,9 +26,9 @@ import { Route as ApiTranslateAudioTtsRouteImport } from './routes/api/translate
 import { Route as ApiTranslateAudioStreamRouteImport } from './routes/api/translate/audio/stream'
 import { Route as ApiConversationsIdMessagesIndexRouteImport } from './routes/api/conversations/$id/messages/index'
 
-const TranslationRoute = TranslationRouteImport.update({
-  id: '/translation',
-  path: '/translation',
+const MicCheckRoute = MicCheckRouteImport.update({
+  id: '/mic-check',
+  path: '/mic-check',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -38,6 +39,11 @@ const AboutRoute = AboutRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TranslateIndexRoute = TranslateIndexRouteImport.update({
+  id: '/translate/',
+  path: '/translate/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
@@ -105,10 +111,11 @@ const ApiConversationsIdMessagesIndexRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/translation': typeof TranslationRoute
+  '/mic-check': typeof MicCheckRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/drizzle': typeof DemoDrizzleRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/translate/': typeof TranslateIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations/': typeof ApiConversationsIndexRoute
@@ -122,10 +129,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/translation': typeof TranslationRoute
+  '/mic-check': typeof MicCheckRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/drizzle': typeof DemoDrizzleRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/translate': typeof TranslateIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations': typeof ApiConversationsIndexRoute
@@ -140,10 +148,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/translation': typeof TranslationRoute
+  '/mic-check': typeof MicCheckRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/drizzle': typeof DemoDrizzleRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/translate/': typeof TranslateIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations/': typeof ApiConversationsIndexRoute
@@ -159,10 +168,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/translation'
+    | '/mic-check'
     | '/demo/better-auth'
     | '/demo/drizzle'
     | '/demo/tanstack-query'
+    | '/translate/'
     | '/api/auth/$'
     | '/demo/sentry/testing'
     | '/api/conversations/'
@@ -176,10 +186,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/translation'
+    | '/mic-check'
     | '/demo/better-auth'
     | '/demo/drizzle'
     | '/demo/tanstack-query'
+    | '/translate'
     | '/api/auth/$'
     | '/demo/sentry/testing'
     | '/api/conversations'
@@ -193,10 +204,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
-    | '/translation'
+    | '/mic-check'
     | '/demo/better-auth'
     | '/demo/drizzle'
     | '/demo/tanstack-query'
+    | '/translate/'
     | '/api/auth/$'
     | '/demo/sentry/testing'
     | '/api/conversations/'
@@ -211,10 +223,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  TranslationRoute: typeof TranslationRoute
+  MicCheckRoute: typeof MicCheckRoute
   DemoBetterAuthRoute: typeof DemoBetterAuthRoute
   DemoDrizzleRoute: typeof DemoDrizzleRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
+  TranslateIndexRoute: typeof TranslateIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   DemoSentryTestingRoute: typeof DemoSentryTestingRoute
   ApiConversationsIndexRoute: typeof ApiConversationsIndexRoute
@@ -228,11 +241,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/translation': {
-      id: '/translation'
-      path: '/translation'
-      fullPath: '/translation'
-      preLoaderRoute: typeof TranslationRouteImport
+    '/mic-check': {
+      id: '/mic-check'
+      path: '/mic-check'
+      fullPath: '/mic-check'
+      preLoaderRoute: typeof MicCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -247,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/translate/': {
+      id: '/translate/'
+      path: '/translate'
+      fullPath: '/translate/'
+      preLoaderRoute: typeof TranslateIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/tanstack-query': {
@@ -339,10 +359,11 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  TranslationRoute: TranslationRoute,
+  MicCheckRoute: MicCheckRoute,
   DemoBetterAuthRoute: DemoBetterAuthRoute,
   DemoDrizzleRoute: DemoDrizzleRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
+  TranslateIndexRoute: TranslateIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   DemoSentryTestingRoute: DemoSentryTestingRoute,
   ApiConversationsIndexRoute: ApiConversationsIndexRoute,
