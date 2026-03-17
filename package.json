@@ -26,6 +26,7 @@
     "@google-cloud/text-to-speech": "^6.4.0",
     "@sentry/tanstackstart-react": "^10.42.0",
     "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/nitro-v2-vite-plugin": "^1.154.9",
     "@tanstack/react-devtools": "latest",
     "@tanstack/react-query": "latest",
     "@tanstack/react-query-devtools": "latest",
