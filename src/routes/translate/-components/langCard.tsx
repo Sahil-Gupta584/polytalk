@@ -1,5 +1,5 @@
 import { Mic, Volume2 } from "lucide-react";
-import { getLangFlag, LANGUAGES } from "../-actions";
+import { getLangFlagUrl, LANGUAGES } from "../-actions";
 
 export function LangCard({
 	label,
@@ -11,7 +11,6 @@ export function LangCard({
 	onSpeakerChange,
 	mics,
 	speakers,
-	highlight,
 }: {
 	label: "A" | "B";
 	lang: string;
@@ -24,33 +23,23 @@ export function LangCard({
 	speakers: MediaDeviceInfo[];
 	highlight?: boolean;
 }) {
-	const flag = getLangFlag(lang);
+	const flag = getLangFlagUrl(lang);
 	return (
-		<div
-			className={`
-      flex-1 flex flex-col gap-3 rounded-2xl p-4 border transition-all duration-300
-      ${
-				highlight
-					? "bg-white/[0.07] border-white/20 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
-					: "bg-white/[0.03] border-white/[0.07]"
-			}
-    `}
-		>
+		<div className="flex-1 flex flex-col gap-3 rounded-2xl p-4 border bg-white/[0.03] border-white/20 transition-all duration-300">
 			{/* Label badge */}
 			<div className="flex items-center justify-between">
-				<span className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.15em]">
+				<span className="text-[10px] font-semibold text-white/50 uppercase tracking-[0.15em]">
 					Person {label}
 				</span>
-				{highlight && (
-					<span className="text-[10px] text-emerald-400/70 uppercase tracking-widest">
-						Speaking
-					</span>
-				)}
 			</div>
 
 			{/* Flag + Language selector */}
 			<div className="flex items-center gap-2">
-				<span className="text-2xl leading-none">{flag}</span>
+				<img
+					src={flag}
+					alt={`${lang} flag`}
+					className="h-6 w-6 rounded-full object-cover"
+				/>
 				<div className="relative flex-1">
 					<select
 						value={lang}
@@ -64,9 +53,9 @@ export function LangCard({
 							</option>
 						))}
 					</select>
-					{/** biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> */}
+					{/** biome-ignore lint/a11y/noSvgWithoutTitle: decorative chevron */}
 					<svg
-						className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25"
+						className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50"
 						viewBox="0 0 12 12"
 						fill="none"
 					>
@@ -82,20 +71,20 @@ export function LangCard({
 			</div>
 
 			{/* Divider */}
-			<div className="h-px bg-white/[0.06]" />
+			<div className="h-px bg-white/20" />
 
 			{/* Device pickers */}
-			<div className="flex flex-col gap-2">
+			<div className="flex flex-col gap-2 text-white/60">
 				{/* Mic */}
 				<div className="flex items-center gap-2">
 					<div className="w-6 h-6 rounded-lg bg-white/[0.06] flex items-center justify-center flex-shrink-0">
-						<Mic className="w-3 h-3 text-white/40" />
+						<Mic className="w-3 h-3 " />
 					</div>
 					<div className="relative flex-1 min-w-0">
 						<select
 							value={mic}
 							onChange={(e) => onMicChange(e.target.value)}
-							className="w-full bg-transparent text-xs text-white/40 outline-none cursor-pointer appearance-none pr-4 truncate [&>option]:bg-zinc-900 [&>option]:text-white"
+							className="w-full bg-transparent text-xs  outline-none cursor-pointer appearance-none pr-4 truncate [&>option]:bg-zinc-900 [&>option]:text-white"
 							title="Microphone"
 							data-testid={`select-mic-${label.toLowerCase()}`}
 						>
@@ -107,7 +96,7 @@ export function LangCard({
 							))}
 						</select>
 						<svg
-							className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 text-white/15"
+							className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 text-white/50"
 							viewBox="0 0 12 12"
 							fill="none"
 						>
@@ -126,13 +115,13 @@ export function LangCard({
 				{/* Speaker */}
 				<div className="flex items-center gap-2">
 					<div className="w-6 h-6 rounded-lg bg-white/[0.06] flex items-center justify-center flex-shrink-0">
-						<Volume2 className="w-3 h-3 text-white/40" />
+						<Volume2 className="w-3 h-3 " />
 					</div>
 					<div className="relative flex-1 min-w-0">
 						<select
 							value={speaker}
 							onChange={(e) => onSpeakerChange(e.target.value)}
-							className="w-full bg-transparent text-xs text-white/40 outline-none cursor-pointer appearance-none pr-4 truncate [&>option]:bg-zinc-900 [&>option]:text-white"
+							className="w-full bg-transparent text-xs  outline-none cursor-pointer appearance-none pr-4 truncate [&>option]:bg-zinc-900 [&>option]:text-white"
 							title="Speaker"
 							data-testid={`select-speaker-${label.toLowerCase()}`}
 						>
@@ -144,7 +133,7 @@ export function LangCard({
 							))}
 						</select>
 						<svg
-							className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 text-white/15"
+							className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 text-white/50"
 							viewBox="0 0 12 12"
 							fill="none"
 						>

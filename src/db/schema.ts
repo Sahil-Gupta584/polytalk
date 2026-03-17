@@ -1,6 +1,6 @@
-import { createInsertSchema } from "drizzle-zod";
 import type { z } from 'better-auth';
 import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
+import { createInsertSchema } from "drizzle-zod";
 
 export const todos = pgTable('todos', {
   id: serial().primaryKey(),
@@ -11,8 +11,8 @@ export const todos = pgTable('todos', {
 
 export const translations = pgTable("translations", {
   id: serial("id").primaryKey(),
-  sourceLanguage: text("source_language").notNull(),
-  targetLanguage: text("target_language").notNull(),
+  primaryLang: text("source_language").notNull(),
+  secondaryLang: text("target_language").notNull(),
   sourceText: text("source_text").notNull(),
   translatedText: text("translated_text").notNull(),
   createdAt: timestamp("created_at").defaultNow(),

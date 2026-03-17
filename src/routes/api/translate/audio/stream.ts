@@ -7,7 +7,11 @@ import LanguageDetect from "languagedetect";
 import { storage } from "#/db/storage";
 import { detectAudioFormat } from "#/lib/audio";
 import { env } from "#/lib/env";
-import { codeToName, translateText } from "#/lib/translation/client";
+import {
+	codeToName,
+	detectLanguageFromTranscript,
+	translateText,
+} from "#/lib/translation/client";
 
 const defaultLocales: Record<string, string> = {
 	en: "en-US",
@@ -17,40 +21,29 @@ const defaultLocales: Record<string, string> = {
 	es: "es-ES",
 	pt: "pt-BR",
 	zh: "zh-CN",
+	ja: "ja-JP",
+	ko: "ko-KR",
+	ru: "ru-RU",
+	it: "it-IT",
+	ar: "ar-SA",
+	tr: "tr-TR",
+	nl: "nl-NL",
+	sv: "sv-SE",
+	pl: "pl-PL",
+	id: "id-ID",
+	vi: "vi-VN",
+	th: "th-TH",
+	bn: "bn-BD",
+	ur: "ur-PK",
+	ms: "ms-MY",
+	tl: "tl-PH",
+	el: "el-GR",
 };
 
 export function langToLocale(lang: string) {
-	const userLocale = navigator.languages?.[0] || navigator.language || "en-US";
 	const langPrefix = lang.toLowerCase().split("-")[0];
 
-	if (userLocale.toLowerCase().startsWith(langPrefix)) {
-		return userLocale;
-	}
-
 	return defaultLocales[langPrefix] || `${langPrefix}-US`;
-}
-const languageDetector = new LanguageDetect();
-
-function detectLanguageFromTranscript(
-	transcript: string,
-	candidateLanguages: string[],
-): string {
-	const results = languageDetector.detect(transcript, 12) as [string, number][];
-	const normalizedCandidates = new Set(
-		candidateLanguages.map((lang) => codeToName(lang).toLowerCase()),
-	);
-
-	const filtered = results
-		.filter(([lang]) => normalizedCandidates.has(lang.toLowerCase()))
-		.sort((a, b) => b[1] - a[1]);
-
-	const detected =
-		filtered[0]?.[0]?.toLowerCase() ||
-		codeToName(candidateLanguages[0] || "en");
-	const detectedCode = candidateLanguages.find(
-		(lang) => codeToName(lang).toLowerCase() === detected,
-	);
-	return detectedCode || candidateLanguages[0] || "en";
 }
 
 function createSseEvent(event: string, data: unknown) {
@@ -79,7 +72,7 @@ async function persistDebugAudio(args: {
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const extension = getAudioExtension(args.mimeType, args.detectedFormat);
 	const fileName = `debug-${args.reason}-${timestamp}.${extension}`;
-	const filePath = resolve(process.cwd(), "public", fileName);
+	const filePath = resolve(process.cwd(), "public", "failed-audios", fileName);
 
 	await writeFile(filePath, args.audioBuffer);
 
@@ -119,9 +112,11 @@ const serviceAccountPath = resolve(
 	process.cwd(),
 	env.GOOGLE_SERVICE_ACCOUNT_FILE,
 );
+const speechEndpoint = `${env.GOOGLE_STT_REGION}-speech.googleapis.com`;
 const sttClient = existsSync(serviceAccountPath)
 	? new speech.v2.SpeechClient({
 			keyFilename: serviceAccountPath,
+			apiEndpoint: speechEndpoint,
 		})
 	: null;
 
@@ -141,19 +136,19 @@ async function transcribeWithGoogle(
 		);
 	}
 
+	const sttModel = env.GOOGLE_STT_MODEL || "short";
+	const recognizerPath = `projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/${env.GOOGLE_STT_REGION}/recognizers/_`;
 	console.log("[google stt] recognize request", {
-		languageCodes,
-		audioBytes: audioBuffer.length,
-		projectId: env.GOOGLE_CLOUD_PROJECT_ID,
-		recognizer: `projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/global/recognizers/_`,
+		model: sttModel,
+		region: env.GOOGLE_STT_REGION,
 	});
 
 	const [response] = await sttClient.recognize({
-		recognizer: `projects/${env.GOOGLE_CLOUD_PROJECT_ID}/locations/global/recognizers/_`,
+		recognizer: recognizerPath,
 		config: {
 			autoDecodingConfig: {},
 			languageCodes,
-			model: "short",
+			model: sttModel,
 		},
 		content: audioBuffer,
 	});
@@ -165,9 +160,8 @@ async function transcribeWithGoogle(
 		.trim();
 
 	console.log("[google stt] recognize response", {
-		languageCodes,
 		resultCount: response.results?.length || 0,
-		transcriptLength: transcript.length,
+		transcriptLength: transcript?.length,
 	});
 
 	if (!transcript) {
@@ -188,18 +182,18 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 				try {
 					const formData = await request.formData();
 					const audioFile = formData.get("audio") as File | null;
-					const nativeLanguage = formData.get("nativeLanguage") as
-						| string
-						| null;
+					const primaryLang = formData.get("primaryLanguage") as string | null;
 					const secondaryLanguage = formData.get("secondaryLanguage") as
 						| string
 						| null;
 
-					if (!audioFile || !nativeLanguage || !secondaryLanguage) {
+					if (!audioFile || !primaryLang || !secondaryLanguage) {
+						console.log({primaryLang,secondaryLanguage});
+						
 						return new Response(
 							JSON.stringify({
 								error:
-									"Missing required fields: audio, nativeLanguage, secondaryLanguage, nativeLocale, secondaryLocale",
+									"Missing required fields: audio, primaryLang, secondaryLanguage, nativeLocale, secondaryLocale",
 							}),
 							{ status: 400 },
 						);
@@ -210,15 +204,12 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 					const detectedFormat = detectAudioFormat(audioBuffer);
 					const audioMimeType = audioFile.type || "unknown";
 					const languageCodes = [
-						langToLocale(nativeLanguage),
+						langToLocale(primaryLang),
 						langToLocale(secondaryLanguage),
 					];
 					console.log("[audio stream] request received", {
-						fileName: audioFile.name || "unnamed",
-						mimeType: audioMimeType,
-						audioBytes: audioBuffer.length,
-						detectedFormat,
-						nativeLanguage,
+						sizeKB: (audioBuffer.length / 1024).toFixed(1),
+						primaryLang,
 						secondaryLanguage,
 						languageCodes,
 					});
@@ -243,8 +234,26 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 					const stream = new ReadableStream({
 						start(controller) {
 							const encoder = new TextEncoder();
+							let isClosed = false;
+
 							const enqueue = (event: string, data: unknown) => {
-								controller.enqueue(encoder.encode(createSseEvent(event, data)));
+								if (isClosed) return;
+								try {
+									controller.enqueue(encoder.encode(createSseEvent(event, data)));
+								} catch (e) {
+									isClosed = true;
+								}
+							};
+
+							const closeStream = () => {
+								if (isClosed) return;
+								try {
+									controller.close();
+								} catch (e) {
+									// ignore
+								} finally {
+									isClosed = true;
+								}
 							};
 
 							void (async () => {
@@ -267,66 +276,50 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 										enqueue("done", {
 											userTranscript: "",
 											translatedText: "",
-											detectedLanguage: nativeLanguage,
+											detectedLanguage: primaryLang,
 											isUserSpeakingNative: true,
 										});
-										controller.close();
+										closeStream();
 										return;
 									}
 
 									enqueue("transcript.delta", { text: userTranscript });
 
-									const detectedLanguage = detectLanguageFromTranscript(
-										userTranscript,
-										[nativeLanguage, secondaryLanguage],
-									);
+									const detectedLanguage =
+										await detectLanguageFromTranscript(userTranscript);
 									console.log("[audio stream] transcript resolved", {
 										userTranscript,
 										detectedLanguage,
-										nativeLanguage,
+										primaryLang,
 										secondaryLanguage,
 									});
-									const sourceLanguage = detectedLanguage;
-									const targetLanguage =
-										detectedLanguage === nativeLanguage
-											? secondaryLanguage
-											: nativeLanguage;
-									const isUserSpeakingNative =
-										detectedLanguage === nativeLanguage;
 
 									enqueue("transcript.final", {
 										text: userTranscript,
 										detectedLanguage,
-										isUserSpeakingNative,
 									});
 
-									if (!targetLanguage || targetLanguage === sourceLanguage) {
-										console.log("[audio stream] skipping translation", {
-											sourceLanguage,
-											targetLanguage,
-										});
-										enqueue("translation.final", {
-											text: userTranscript,
-										});
-										enqueue("done", {
-											userTranscript,
-											translatedText: userTranscript,
-											detectedLanguage,
-											isUserSpeakingNative,
-										});
-										controller.close();
-										return;
-									}
+									const targetLang =
+										detectedLanguage === primaryLang
+											? secondaryLanguage
+											: primaryLang;
+
+									const sourceLang =
+										detectedLanguage === primaryLang
+											? primaryLang
+											: secondaryLanguage;
 
 									const translatedText = await translateText(
 										userTranscript,
-										nativeLanguage,
-										targetLanguage,
+										sourceLang,
+										targetLang,
 									);
+
 									console.log("[audio stream] translation complete", {
-										sourceLanguage,
-										targetLanguage,
-										translatedLength: translatedText.length,
+										sourceLang,
+										targetLang,
+										userTranscript,
+										translatedText,
 									});
 
 									enqueue("translation.final", {
@@ -335,16 +328,16 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 									enqueue("done", {
 										userTranscript,
 										translatedText,
-										detectedLanguage,
-										isUserSpeakingNative,
+										sourceLang,
+										targetLang,
 									});
 
 									void storage
 										.createTranslation({
-											sourceLanguage,
-											targetLanguage,
 											sourceText: userTranscript,
 											translatedText,
+											primaryLang,
+											secondaryLang:secondaryLanguage
 										})
 										.catch((storageError) => {
 											console.error(
@@ -357,16 +350,20 @@ export const Route = createFileRoute("/api/translate/audio/stream")({
 										userTranscriptLength: userTranscript.length,
 										translatedLength: translatedText.length,
 									});
-									controller.close();
+									closeStream();
 								} catch (error) {
+									if (isClosed) return;
 									console.error("[audio stream] failed", error);
 									enqueue("error", {
 										message: getErrorMessage(error),
 									});
-									controller.close();
+									closeStream();
 								}
 							})();
 						},
+						cancel() {
+							console.log("[audio stream] client disconnected");
+						}
 					});
 
 					return new Response(stream, {

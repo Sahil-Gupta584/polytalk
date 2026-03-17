@@ -5,6 +5,7 @@ interface UseVoiceDetectionOptions {
 	onVoiceEnd?: (audioBlob: Blob) => void;
 	silenceThreshold?: number;
 	silenceDuration?: number;
+	onLevelChange?: (level: number) => void;
 }
 
 export function useVoiceDetection({
@@ -12,6 +13,7 @@ export function useVoiceDetection({
 	onVoiceEnd,
 	silenceThreshold = 0.01,
 	silenceDuration = 1500,
+	onLevelChange,
 }: UseVoiceDetectionOptions) {
 	const [isListening, setIsListening] = useState(false);
 	const [isVoiceDetected, setIsVoiceDetected] = useState(false);
@@ -24,6 +26,7 @@ export function useVoiceDetection({
 	const chunksRef = useRef<Blob[]>([]);
 	const animationFrameRef = useRef<number | null>(null);
 	const silenceTimeoutRef = useRef<number | null>(null);
+	const speechStableRef = useRef<number | null>(null);
 
 	const startListening = useCallback(async (micId?: string) => {
 		try {
@@ -109,7 +112,23 @@ export function useVoiceDetection({
 		const average =
 			Array.from(dataArray).reduce((a, b) => a + b, 0) / dataArray.length / 255;
 
-		if (average > silenceThreshold && !isVoiceDetected && !isProcessing) {
+		onLevelChange?.(average);
+
+		const now = performance.now();
+		if (average > silenceThreshold) {
+			if (!speechStableRef.current) {
+				speechStableRef.current = now;
+			}
+		} else {
+			speechStableRef.current = null;
+		}
+
+		const stableEnough =
+			speechStableRef.current &&
+			now - speechStableRef.current >= 150 &&
+			average > silenceThreshold;
+
+		if (stableEnough && !isVoiceDetected && !isProcessing) {
 			setIsVoiceDetected(true);
 			onVoiceStart?.();
 
@@ -178,6 +197,7 @@ export function useVoiceDetection({
 		silenceDuration,
 		onVoiceStart,
 		onVoiceEnd,
+		onLevelChange,
 	]);
 
 	useEffect(() => {

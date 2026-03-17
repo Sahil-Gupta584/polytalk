@@ -1,3 +1,4 @@
+import { LingoDotDevEngine } from "lingo.dev/sdk";
 import { env } from "../env";
 
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
@@ -31,7 +32,7 @@ export async function translateText(
 			engineId: "eng_JtC1dHnG9n4zxcuf",
 			sourceLocale,
 			targetLocale,
-			data: {text},
+			data: { text },
 		}),
 	});
 
@@ -46,9 +47,18 @@ export async function translateText(
 	}
 
 	const { data } = await response.json();
-	console.log("[translation client] response", { data });
+	console.log("[translation client] translated", text, "to", data?.text);
 
 	return data?.text;
+}
+
+export async function detectLanguageFromTranscript(transcript: string) {
+	const lingoDotDev = new LingoDotDevEngine({
+		apiKey: env.LINGODOTDEV_API_KEY,
+	});
+	const locale = await lingoDotDev.recognizeLocale(transcript);
+	console.log("[detectLanguageFromTranscript]", { transcript, locale });
+	return locale
 }
 
 export { codeToName };

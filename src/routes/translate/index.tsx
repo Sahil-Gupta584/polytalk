@@ -1,29 +1,30 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import langs from "langs";
-import { ArrowLeftRight, Mic, MicOff, Volume2 } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Mic, MicVocal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useDevices } from "@/hooks/use-devices";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslationStream } from "@/hooks/use-translation-stream";
 import { useVoiceDetection } from "@/hooks/use-voice-detection";
+import { getLangFlag } from "./-actions";
+import { LangCard } from "./-components/langCard";
+import { type Message, MessageBubble } from "./-components/messageBubble";
+import { WaveformBars } from "./-components/waveformbars";
 
-const LANGUAGES = langs.codes("1");
-const LANGUAGE_NAMES = new Intl.DisplayNames(["en"], { type: "language" });
+const IDLE_BAR_KEYS = Array.from(
+	{ length: 24 },
+	(_, index) => `idle-bar-${index}`,
+);
 
-function getLanguageName(code: string): string {
-	return LANGUAGE_NAMES.of(code) || code.toUpperCase();
-}
-
-function getFallbackSecondaryLanguage(nativeLanguage: string) {
-	return LANGUAGES.find((language) => language !== nativeLanguage) || "";
+function getLanguageCode(name: string) {
+	return langs.where("name", name)?.["1"] || "en";
 }
 
 function langToLocale(lang: string) {
-	const userLocale = navigator.languages?.[0] || navigator.language || "en-US";
-	const langPrefix = lang.toLowerCase().split("-")[0];
-	return userLocale.startsWith(langPrefix)
-		? userLocale
-		: `${lang.toLowerCase()}-US`;
+	const maximized = new Intl.Locale(lang).maximize();
+	return maximized.region
+		? `${maximized.language}-${maximized.region}`
+		: maximized.language;
 }
 
 function voiceMatchesLanguage(
@@ -40,7 +41,7 @@ function voiceMatchesLanguage(
 	return (
 		normalizedVoiceLang === normalizedTarget ||
 		normalizedVoiceLang.startsWith(`${normalizedTarget}-`)
-	)
+	);
 }
 
 export const Route = createFileRoute("/translate/")({
@@ -50,197 +51,185 @@ export const Route = createFileRoute("/translate/")({
 export default function Translation() {
 	const { toast } = useToast();
 	const { mics, speakers, hasPermission, requestPermission } = useDevices();
+	const [messages, setMessages] = useState<Message[]>([]);
+	const [waveformData, setWaveformData] = useState<number[]>([]);
 
-	const [isConfigExpanded, setIsConfigExpanded] = useState(false);
-	const [nativeLanguage, setNativeLanguage] = useState("en");
-	const [secondaryLanguage, setSecondaryLanguage] = useState("hi");
-	const [activeInputSide, setActiveInputSide] = useState<
-		"native" | "secondary"
-	>("native");
-	const [nativeMic, setNativeMic] = useState("default");
-	const [secondaryMic, setSecondaryMic] = useState("default");
-	const [nativeSpeaker, setNativeSpeaker] = useState("default");
-	const [secondarySpeaker, setSecondarySpeaker] = useState("default");
-	const [_userText, setUserText] = useState("");
-	const [_translatedText, setTranslatedText] = useState("");
-	const [detectedLanguage, setDetectedLanguage] = useState("");
-	const [isUserSpeakingNative, setIsUserSpeakingNative] = useState(true);
-	const [availableVoices, setAvailableVoices] = useState<
-		SpeechSynthesisVoice[]
-	>([]);
+	const [langA, setLangA] = useState("Japanese");
+	const [langB, setLangB] = useState("English");
+	const [micA, setMicA] = useState("default");
+	const [speakerA, setSpeakerA] = useState("default");
+	const [micB, setMicB] = useState("default");
+	const [speakerB, setSpeakerB] = useState("default");
+	const [activeSide, setActiveSide] = useState<"A" | "B">("A");
+	const [liveTranscript, setLiveTranscript] = useState("");
+	const [liveTranslation, setLiveTranslation] = useState("");
+	const [swapping, setSwapping] = useState(false);
+
+	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const micLevelRef = useRef(0);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const savedLangA = window.localStorage.getItem("parley:langA");
+		const savedLangB = window.localStorage.getItem("parley:langB");
+		const savedMicA = window.localStorage.getItem("parley:micA");
+		const savedMicB = window.localStorage.getItem("parley:micB");
+		const savedSpeakerA = window.localStorage.getItem("parley:speakerA");
+		const savedSpeakerB = window.localStorage.getItem("parley:speakerB");
+
+		if (savedLangA) setLangA(savedLangA);
+		if (savedLangB) setLangB(savedLangB);
+		if (savedMicA) setMicA(savedMicA);
+		if (savedMicB) setMicB(savedMicB);
+		if (savedSpeakerA) setSpeakerA(savedSpeakerA);
+		if (savedSpeakerB) setSpeakerB(savedSpeakerB);
+	}, []);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		window.localStorage.setItem("parley:langA", langA);
+		window.localStorage.setItem("parley:langB", langB);
+	}, [langA, langB]);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		window.localStorage.setItem("parley:micA", micA);
+		window.localStorage.setItem("parley:micB", micB);
+		window.localStorage.setItem("parley:speakerA", speakerA);
+		window.localStorage.setItem("parley:speakerB", speakerB);
+	}, [micA, micB, speakerA, speakerB]);
+	const [status, setStatus] = useState<"idle" | "recording" | "processing">(
+		"idle",
+	);
 
 	const isProcessingRef = useRef(false);
 	const ttsRequestIdRef = useRef(0);
-	const {
-		isStreaming,
-		startStream,
-		stopStream: stopTranslationStream,
-	} = useTranslationStream();
+	const { startStream, stopStream: stopTranslationStream } =
+		useTranslationStream();
 	const {
 		isListening,
-		isVoiceDetected,
-		isProcessing: isVoiceProcessing,
 		setIsProcessing: setIsVoiceProcessing,
 		startListening,
 		stopListening,
 	} = useVoiceDetection({
 		onVoiceStart: () => {
-			setUserText("Listening...");
+			setLiveTranscript("");
+			setLiveTranslation("");
+			setStatus("recording");
 		},
 		onVoiceEnd: (audioBlob) => {
-			processAudio(audioBlob);
+			// setStatus("processing");
+			void processAudio(audioBlob);
+		},
+		onLevelChange: (level) => {
+			micLevelRef.current = level;
 		},
 	});
 
 	useEffect(() => {
-		if (secondaryLanguage === nativeLanguage) {
-			setSecondaryLanguage(getFallbackSecondaryLanguage(nativeLanguage));
-		}
-	}, [nativeLanguage, secondaryLanguage]);
-
-	useEffect(() => {
-		if (!nativeMic && mics[0]?.deviceId) {
-			setNativeMic(mics[0].deviceId);
-		}
-		if (!secondaryMic && mics[0]?.deviceId) {
-			setSecondaryMic(mics[0].deviceId);
-		}
-	}, [mics, nativeMic, secondaryMic]);
-
-	useEffect(() => {
-		if (!nativeSpeaker && speakers[0]?.deviceId) {
-			setNativeSpeaker(speakers[0].deviceId);
-		}
-		if (!secondarySpeaker && speakers[0]?.deviceId) {
-			setSecondarySpeaker(speakers[0].deviceId);
-		}
-	}, [speakers, nativeSpeaker, secondarySpeaker]);
-
-	useEffect(() => {
-		if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-			return
+		if (status !== "recording") {
+			setWaveformData([]);
+			return;
 		}
 
-		const loadVoices = () => {
-			setAvailableVoices(window.speechSynthesis.getVoices());
-		}
-
-		loadVoices();
-		window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+		const intervalId = window.setInterval(() => {
+			const normalized = Math.min(1, Math.max(0, micLevelRef.current));
+			setWaveformData(
+				Array.from({ length: 24 }, (_, index) => {
+					const oscillation = Math.sin((index / 24) * Math.PI * 2) * 0.04;
+					const jitter = Math.random() * 0.25;
+					const value = normalized * 0.85 + jitter + oscillation;
+					return Math.min(1, Math.max(0, value));
+				}),
+			);
+		}, 120);
 
 		return () => {
-			window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
-		}
-	}, []);
+			window.clearInterval(intervalId);
+		};
+	}, [status]);
 
-	const getVoices = async () => {
-		if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-			return [] as SpeechSynthesisVoice[];
-		}
-
-		const existingVoices = window.speechSynthesis.getVoices();
-		if (existingVoices.length > 0) {
-			return existingVoices;
-		}
-
-		return await new Promise<SpeechSynthesisVoice[]>((resolve) => {
-			const timeoutId = window.setTimeout(() => {
-				window.speechSynthesis.removeEventListener(
-					"voiceschanged",
-					handleVoicesChanged,
-				)
-				resolve(window.speechSynthesis.getVoices());
-			}, 1000);
-
-			const handleVoicesChanged = () => {
-				window.clearTimeout(timeoutId);
-				window.speechSynthesis.removeEventListener(
-					"voiceschanged",
-					handleVoicesChanged,
-				)
-				resolve(window.speechSynthesis.getVoices());
-			}
-
-			window.speechSynthesis.addEventListener(
-				"voiceschanged",
-				handleVoicesChanged,
-			)
-		})
-	}
-
-	const processTestAudio = async () => {
-		if (isProcessingRef.current) return;
-
-		try {
-			const res = await fetch("/ttsreader_life-is-si.mp3");
-			const blob = await res.blob();
-			const file = new File([blob], "ttsreader_life-is-si.mp3", {
-				type: "audio/mp3",
-			})
-			await processAudio(file);
-		} catch (err) {
-			console.error("Error loading test audio:", err);
-			toast({
-				title: "Test Error",
-				description: "Failed to load test audio file.",
-				variant: "destructive",
-			})
-		}
-	}
+	const swapLanguages = () => {
+		setSwapping(true);
+		setTimeout(() => setSwapping(false), 400);
+		setLangA(langB);
+		setLangB(langA);
+		setMicA(micB);
+		setMicB(micA);
+		setSpeakerA(speakerB);
+		setSpeakerB(speakerA);
+	};
 
 	const processAudio = async (audioFile: File | Blob) => {
 		if (isProcessingRef.current) return;
 
+		const primaryLanguageCode = getLanguageCode(langA);
+		const secondaryLanguage = getLanguageCode(langB);
+		const targetSpeaker = activeSide === "A" ? speakerB : speakerA;
+
 		if (
-			!nativeLanguage ||
+			!primaryLanguageCode ||
 			!secondaryLanguage ||
-			nativeLanguage === secondaryLanguage
+			primaryLanguageCode === secondaryLanguage
 		) {
 			toast({
 				title: "Language Setup Required",
-				description:
-					"Select both primary and secondary languages before recording.",
+				description: "Select two different languages before recording.",
 				variant: "destructive",
-			})
-			return
+			});
+			setStatus("idle");
+			return;
 		}
 
 		isProcessingRef.current = true;
 		setIsVoiceProcessing(true);
 
 		try {
-			setUserText("Processing...");
-			setTranslatedText("");
-			setDetectedLanguage("");
+			setLiveTranscript("");
+			setLiveTranslation("");
 
 			await startStream(
 				audioFile,
-				nativeLanguage,
+				primaryLanguageCode,
 				secondaryLanguage,
 				(text) => {
-					setUserText(text || "Processing...");
+					setLiveTranscript(text || "");
 				},
-				(language, isUserNative) => {
-					setDetectedLanguage(language);
-					setIsUserSpeakingNative(isUserNative);
-					setActiveInputSide(isUserNative ? "secondary" : "native");
-				},
+				() => {},
 				(text) => {
-					setTranslatedText(text);
+					setLiveTranslation(text);
 				},
 				(result) => {
 					if (!result.userTranscript.trim()) {
-						setUserText("No speech detected.");
-						setTranslatedText("");
-						return
+						setLiveTranscript("");
+						setLiveTranslation("");
+						return;
 					}
+
+					setMessages((current) => [
+						...current,
+						{
+							id: crypto.randomUUID(),
+							translatedText: result.userTranscript,
+							timestamp: new Date(),
+							lang:result.sourceLang
+						},
+					]);
+					window.setTimeout(() => {
+						messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+					}, 0);
 
 					if (result.translatedText.trim()) {
 						void playTranslatedAudio(
-							result.translatedText,
-							result.detectedLanguage,
-						)
+							result.userTranscript,
+							result.sourceLang,
+							targetSpeaker,
+						);
 					}
+
+					setLiveTranscript("");
+					setLiveTranslation("");
+					setActiveSide((current) => (current === "A" ? "B" : "A"));
 				},
 				(err) => {
 					console.error("Error processing audio:", err);
@@ -248,11 +237,11 @@ export default function Translation() {
 						title: "Translation Failed",
 						description: err.message,
 						variant: "destructive",
-					})
-					setUserText("Failed.");
-					setTranslatedText("Error");
+					});
+					setLiveTranscript("");
+					setLiveTranslation("");
 				},
-			)
+			);
 		} catch (err) {
 			console.error("Error processing audio:", err);
 			toast({
@@ -260,70 +249,52 @@ export default function Translation() {
 				description:
 					err instanceof Error ? err.message : "Failed to process audio",
 				variant: "destructive",
-			})
-			setUserText("Failed.");
-			setTranslatedText("Error");
+			});
+			setLiveTranscript("");
+			setLiveTranslation("");
 		} finally {
 			isProcessingRef.current = false;
 			setIsVoiceProcessing(false);
 		}
-	}
+	};
 
 	const playTranslatedAudio = async (
 		text: string,
-		sourceLanguage: string = detectedLanguage,
+		secondaryLanguage: string,
+		targetSpeaker: string,
 	) => {
-		if (!text.trim()) return;
+		if (!text.trim()) {
+			console.debug("[TTS] skipped empty text");
+			return;
+		}
 
 		const requestId = ++ttsRequestIdRef.current;
 
+		if (typeof window === "undefined") {
+			console.debug("[TTS] window not available");
+			return;
+		}
+
+		window.speechSynthesis.cancel();
+
+		if (requestId !== ttsRequestIdRef.current) {
+			console.debug("[TTS] request superseded", requestId);
+			return;
+		}
+
 		try {
-			if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-				return
-			}
-
-			window.speechSynthesis.cancel();
-
-			if (requestId !== ttsRequestIdRef.current) {
-				return
-			}
-
-			const utterance = new SpeechSynthesisUtterance(text);
-			const voices = (
-				availableVoices.length ? availableVoices : await getVoices()
-			) as SpeechSynthesisVoice[];
-			const targetSide =
-				sourceLanguage === nativeLanguage ? "secondary" : "native";
-			const targetLanguage =
-				targetSide === "native" ? nativeLanguage : secondaryLanguage;
-			const targetSpeaker =
-				targetSide === "native" ? nativeSpeaker : secondarySpeaker;
-			const preferredVoice =
-				voices.find((voice) =>
-					voice.lang
-						.toLowerCase()
-						.startsWith(`${targetLanguage.toLowerCase()}-`),
-				) ||
-				voices.find(
-					(voice) => voice.lang.toLowerCase() === targetLanguage.toLowerCase(),
-				)
-			const fallbackVoice =
-				voices.find((voice) => voice.default) || voices[0] || null;
-			const selectedVoice = preferredVoice || fallbackVoice;
-
-			if (selectedVoice) {
-				utterance.voice = selectedVoice;
-				utterance.lang = selectedVoice.lang;
-			} else {
-				utterance.lang = langToLocale(targetLanguage);
-			}
-
-			const shouldUseBrowserVoice = voiceMatchesLanguage(
-				selectedVoice,
-				targetLanguage,
-			)
+			const targetLocale = langToLocale(secondaryLanguage);
+			const shouldUseBrowserVoice = window.speechSynthesis
+				.getVoices()
+				.some((voice) => voiceMatchesLanguage(voice, secondaryLanguage));
+			console.log(window.speechSynthesis.getVoices(), { secondaryLanguage });
 
 			if (!shouldUseBrowserVoice || targetSpeaker !== "default") {
+				console.debug("[TTS] falling back to Google", {
+					text,
+					targetLocale,
+					targetSpeaker,
+				});
 				const res = await fetch("/api/translate/audio/tts", {
 					method: "POST",
 					headers: {
@@ -331,9 +302,9 @@ export default function Translation() {
 					},
 					body: JSON.stringify({
 						text,
-						languageCode: langToLocale(targetLanguage),
+						languageCode: targetLocale,
 					}),
-				})
+				});
 
 				if (!res.ok) {
 					throw new Error(`Google TTS failed with status ${res.status}`);
@@ -345,64 +316,69 @@ export default function Translation() {
 				}
 
 				const audio = new Audio(`data:audio/mpeg;base64,${data.audio}`);
-				if (
-					targetSpeaker !== "default" &&
-					typeof (
-						audio as HTMLAudioElement & {
-							setSinkId?: (id: string) => Promise<void>;
-						}
-					).setSinkId === "function"
-				) {
-					await (
-						audio as HTMLAudioElement & {
-							setSinkId: (id: string) => Promise<void>;
-						}
-					).setSinkId(targetSpeaker);
+				if (targetSpeaker !== "default" && "setSinkId" in audio) {
+					try {
+						await (
+							audio as HTMLAudioElement & {
+								setSinkId: (id: string) => Promise<void>;
+							}
+						).setSinkId(targetSpeaker);
+					} catch (sinkError) {
+						console.warn("[TTS] speaker sink change failed", sinkError);
+					}
 				}
 				await audio.play();
-				return
+				return;
 			}
 
+			const utterance = new SpeechSynthesisUtterance(text);
 			utterance.rate = 0.95;
 			utterance.volume = 1;
 			utterance.pitch = 1;
+			utterance.lang = targetLocale;
 
 			utterance.onstart = () => {
-				console.log("Speech synthesis started", {
+				console.debug("[TTS] browser voice started", {
 					text,
 					lang: utterance.lang,
-					voice: utterance.voice?.name || "default",
-				})
-			}
+				});
+			};
+
 			utterance.onend = () => {
 				if (ttsRequestIdRef.current === requestId) {
 					ttsRequestIdRef.current = 0;
 				}
-			}
+			};
+
 			utterance.onerror = (event) => {
-				console.error("Speech synthesis failed:", event);
-			}
+				console.error("[TTS] speech synthesis failed:", event);
+			};
 
 			window.speechSynthesis.resume();
+			console.log("speaking through SpeechSynthesisUtterance", {
+				targetLocale,
+			});
+
 			window.speechSynthesis.speak(utterance);
 		} catch (error) {
 			console.error("Error playing translated audio:", error);
 		}
-	}
+	};
 
 	const toggleListening = async () => {
 		if (isListening) {
 			stopListening();
-			return
+			setStatus("idle");
+			return;
 		}
 
-		if (!secondaryLanguage || nativeLanguage === secondaryLanguage) {
+		if (!langA || !langB || getLanguageCode(langA) === getLanguageCode(langB)) {
 			toast({
 				title: "Language Setup Required",
 				description: "Choose two different languages before recording.",
 				variant: "destructive",
-			})
-			return
+			});
+			return;
 		}
 
 		try {
@@ -410,16 +386,16 @@ export default function Translation() {
 				await requestPermission();
 			}
 
-			const activeMic = activeInputSide === "native" ? nativeMic : secondaryMic;
+			const activeMic = activeSide === "A" ? micA : micB;
 			await startListening(activeMic);
 		} catch {
 			toast({
 				title: "Microphone Error",
 				description: "Could not access microphone.",
 				variant: "destructive",
-			})
+			});
 		}
-	}
+	};
 
 	useEffect(() => {
 		return () => {
@@ -428,12 +404,200 @@ export default function Translation() {
 			if (typeof window !== "undefined" && "speechSynthesis" in window) {
 				window.speechSynthesis.cancel();
 			}
-		}
+		};
 	}, [stopListening, stopTranslationStream]);
 
 	return (
-		<div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(61,90,122,0.12),transparent_30%),linear-gradient(180deg,#121316_0%,#0b0d10_100%)] font-sans">
-			<div className="flex-1 overflow-y-auto px-4 py-6 md:px-6">
+		<div className="h-[100dvh] w-full flex flex-col bg-[#0c0c0e] text-white overflow-hidden">
+			<header className="flex-shrink-0 flex items-center justify-between px-4 py-4 border-b border-white/[0.06]">
+				<Link to="/">
+					<button
+						className="flex items-center gap-2  hover:text-white/70 transition-colors"
+						data-testid="button-back"
+					>
+						<ArrowLeft className="w-4 h-4" />
+						<span className="text-sm font-medium">PolyTalk</span>
+					</button>
+				</Link>
+
+				<Link
+					to="/mic-check"
+					className="flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/40 hover:border-white/20 hover:text-white transition"
+				>
+					<MicVocal className="h-4 w-4" />
+					Mic Check
+				</Link>
+
+				{/* {messages.length > 0 && (
+					<button
+						onClick={() => {
+							setMessages([]);
+							setLastDetectedSide(null);
+							setStatus("idle");
+							setWaveformData([]);
+						}}
+						className="p-2 rounded-xl text-white/30 hover:text-white/60 hover:bg-white/[0.05] transition-all"
+						title="Clear conversation"
+						data-testid="button-clear"
+					>
+						<RotateCcw className="w-4 h-4" />
+					</button>
+				)}
+				{messages.length === 0 && <div className="w-8" />} */}
+			</header>
+
+			{/* ─── Language Cards ─── */}
+			<div className="flex-shrink-0 px-4 pt-4 pb-3">
+				<div className="flex items-stretch justify-center gap-3">
+					<div>
+						<LangCard
+							label="A"
+							lang={langA}
+							onLangChange={setLangA}
+							mic={micA}
+							onMicChange={setMicA}
+							speaker={speakerA}
+							onSpeakerChange={setSpeakerA}
+							mics={mics}
+							speakers={speakers}
+						/>
+					</div>
+
+					{/* Swap button */}
+					<div className="flex flex-col items-center justify-center gap-2 flex-shrink-0">
+						<button
+							onClick={swapLanguages}
+							className={`
+				w-9 h-9 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center
+				text-white/30 hover:text-white/60 hover:bg-white/10 transition-all duration-200
+				${swapping ? "rotate-180" : "rotate-0"} transition-transform duration-300
+			  `}
+							title="Swap languages"
+							data-testid="button-swap-langs"
+						>
+							<ArrowLeftRight className="w-3.5 h-3.5" />
+						</button>
+					</div>
+
+					<div>
+						<LangCard
+							label="B"
+							lang={langB}
+							onLangChange={setLangB}
+							mic={micB}
+							onMicChange={setMicB}
+							speaker={speakerB}
+							onSpeakerChange={setSpeakerB}
+							mics={mics}
+							speakers={speakers}
+						/>
+					</div>
+				</div>
+
+				{/* Hint */}
+				<p className="mt-2.5 text-center text-[10px] text-white/50 leading-snug">
+					Each person's mic &amp; speaker can be set independently
+				</p>
+			</div>
+
+			{/* ─── Conversation Area ─── */}
+			<div className="flex-1 overflow-y-auto px-4 py-2 min-h-0">
+				{messages.length === 0 ? (
+					<div className="h-full flex flex-col items-center justify-center gap-3 text-center">
+						<div className="flex items-center gap-3 text-3xl opacity-60">
+							<span>{getLangFlag(langA)}</span>
+							<ArrowLeftRight className="w-4 h-4 text-white/50" />
+							<span>{getLangFlag(langB)}</span>
+						</div>
+						<div>
+							<p className="text-white/50 font-medium text-sm mb-1">
+								{status === "processing"
+									? "Translating..."
+									: status === "recording"
+										? `Listening to ${activeSide === "A" ? langA : langB}`
+										: "Ready to translate"}
+							</p>
+							<p className="text-white/40 text-xs max-w-[220px] leading-relaxed">
+								{liveTranscript || liveTranslation
+									? `${liveTranscript}${liveTranslation ? ` -> ${liveTranslation}` : ""}`
+									: `Tap the mic and speak in ${activeSide === "A" ? langA : langB}`}
+							</p>
+						</div>
+					</div>
+				) : (
+					<div className="py-2">
+						{messages.map((msg) => (
+							<MessageBubble key={msg.id} msg={msg} />
+						))}
+						<div ref={messagesEndRef} />
+					</div>
+				)}
+			</div>
+
+			{/* ─── Record Footer ─── */}
+			<div className="flex-shrink-0 border-t border-white/[0.06] px-6 pb-8 pt-4 flex flex-col items-center gap-3">
+				{/* Waveform / status */}
+				<div className="w-full max-w-xs h-10">
+					{status === "recording" && <WaveformBars data={waveformData} />}
+					{status === "processing" && (
+						<div className="flex items-center justify-center gap-1.5 h-10 text-xs text-white/25">
+							{[0, 150, 300].map((d) => (
+								<span
+									key={d}
+									className="w-1.5 h-1.5 rounded-full bg-indigo-400/70 animate-bounce"
+									style={{ animationDelay: `${d}ms` }}
+								/>
+							))}
+							<span className="ml-2 uppercase tracking-widest">
+								Translating
+							</span>
+						</div>
+					)}
+					{status === "idle" && (
+						<div className="flex items-center justify-center gap-[3px] h-10">
+							{IDLE_BAR_KEYS.map((key) => (
+								<div
+									key={key}
+									className="w-[3px] h-1 rounded-full bg-white/[0.08]"
+								/>
+							))}
+						</div>
+					)}
+				</div>
+
+				{/* Hint */}
+				<p className="text-[10px] text-white/50 uppercase tracking-widest h-3">
+					Tap to &nbsp;
+					{status === "recording" ? "stop" : "speak"}
+				</p>
+
+				{/* Record button */}
+				<button
+					onClick={toggleListening}
+					disabled={status === "processing"}
+					data-testid="button-record"
+					className={` cursor-pointer
+			relative flex items-center justify-center w-[72px] h-[72px] rounded-full
+			select-none touch-none transition-all duration-200 ease-out
+			${
+				status === "processing"
+					? "opacity-30 cursor-not-allowed scale-90 bg-white/10"
+					: status === "recording"
+						? "scale-110 bg-rose-500 shadow-[0_0_0_10px_rgba(244,63,94,0.12),0_0_32px_rgba(244,63,94,0.25)]"
+						: "bg-white hover:scale-[1.04] active:scale-95 shadow-[0_2px_32px_rgba(255,255,255,0.08)]"
+			}
+		  `}
+				>
+					{status === "recording" && (
+						<span className="absolute inset-0 rounded-full border-2 border-rose-400 animate-ping opacity-40" />
+					)}
+					<Mic
+						className={`w-7 h-7 ${status === "recording" ? "text-white" : "text-zinc-950"}`}
+					/>
+				</button>
+			</div>
+
+			{/* <div className="flex-1 overflow-y-auto px-4 py-6 md:px-6">
 				<div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4">
 					<div className="border-b border-white/8 pb-4">
 						<div className="flex flex-wrap items-center gap-3 px-1">
@@ -603,150 +767,7 @@ export default function Translation() {
 						</p>
 					</div>
 				</div>
-			</div>
+			</div> */}
 		</div>
-	)
-}
-
-type DeviceSideCardProps = {
-	title: string;
-	accent: "blue" | "violet";
-	isActive: boolean;
-	language: string;
-	mic: string;
-	speaker: string;
-	mics: MediaDeviceInfo[];
-	speakers: MediaDeviceInfo[];
-	onActivate: () => void;
-	onLanguageChange: (value: string) => void;
-	onMicChange: (value: string) => void;
-	onSpeakerChange: (value: string) => void;
-};
-
-function DeviceSideCard({
-	title,
-	accent,
-	isActive,
-	language,
-	mic,
-	speaker,
-	mics,
-	speakers,
-	onActivate,
-	onLanguageChange,
-	onMicChange,
-	onSpeakerChange,
-}: DeviceSideCardProps) {
-	const accentClass =
-		accent === "blue"
-			? "border-teal-400/20 bg-teal-400/10 text-teal-200"
-			: "border-cyan-400/20 bg-cyan-400/10 text-cyan-200";
-	const iconClass = accent === "blue" ? "text-teal-300" : "text-cyan-300";
-
-	return (
-		<button
-			type="button"
-			onClick={onActivate}
-			className={`rounded-[24px] border p-4 text-left transition ${
-				isActive
-					? "border-white/14 bg-white/[0.07] shadow-[0_18px_42px_rgba(0,0,0,0.16)]"
-					: "border-white/8 bg-white/[0.03] hover:border-white/14 hover:bg-white/[0.05]"
-			}`}
-		>
-			<div className="mb-3 flex items-center justify-between">
-				<div className="flex items-center gap-3">
-					<div
-						className={`h-2.5 w-2.5 rounded-full ${
-							accent === "blue" ? "bg-teal-300" : "bg-cyan-300"
-						}`}
-					/>
-					<p className="text-sm font-medium text-white">
-						{title} ({getLanguageName(language)})
-					</p>
-				</div>
-				{isActive && (
-					<div
-						className={`rounded-full border px-3 py-1 text-xs ${accentClass}`}
-					>
-						Active
-					</div>
-				)}
-			</div>
-
-			<div className="mb-3">
-				<select
-					value={language}
-					onChange={(event) => {
-						event.stopPropagation();
-						onLanguageChange(event.target.value);
-					}}
-					className="w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white outline-none transition focus:border-white/20"
-				>
-					{LANGUAGES.map((lang) => (
-						<option key={lang} value={lang} className="bg-zinc-900">
-							{getLanguageName(lang)}
-						</option>
-					))}
-				</select>
-			</div>
-
-			<div className="grid gap-3 md:grid-cols-2">
-				<div className="rounded-xl border border-white/10 bg-white/[0.05] p-3">
-					<div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-						<Mic className={`h-4 w-4 ${iconClass}`} />
-						Input
-					</div>
-					<select
-						value={mic}
-						onChange={(event) => {
-							event.stopPropagation();
-							onMicChange(event.target.value);
-						}}
-						className="w-full bg-transparent text-sm font-medium text-white outline-none"
-					>
-						<option value="default" className="bg-zinc-900">
-							Default microphone
-						</option>
-						{mics.map((device) => (
-							<option
-								key={device.deviceId}
-								value={device.deviceId}
-								className="bg-zinc-900"
-							>
-								{device.label || "Microphone"}
-							</option>
-						))}
-					</select>
-				</div>
-
-				<div className="rounded-xl border border-white/10 bg-white/[0.05] p-3">
-					<div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-						<Volume2 className={`h-4 w-4 ${iconClass}`} />
-						Output
-					</div>
-					<select
-						value={speaker}
-						onChange={(event) => {
-							event.stopPropagation();
-							onSpeakerChange(event.target.value);
-						}}
-						className="w-full bg-transparent text-sm font-medium text-white outline-none"
-					>
-						<option value="default" className="bg-zinc-900">
-							Default speaker
-						</option>
-						{speakers.map((device) => (
-							<option
-								key={device.deviceId}
-								value={device.deviceId}
-								className="bg-zinc-900"
-							>
-								{device.label || "Speaker"}
-							</option>
-						))}
-					</select>
-				</div>
-			</div>
-		</button>
-	)
+	);
 }

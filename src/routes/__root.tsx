@@ -26,7 +26,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 				content: "width=device-width, initial-scale=1",
 			},
 			{
-				title: "Parley",
+				title: "PolyTalk - Live multilingual voice translator",
 			},
 		],
 		links: [

@@ -16,7 +16,6 @@ import { Route as TranslateIndexRouteImport } from './routes/translate/index'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoDrizzleRouteImport } from './routes/demo/drizzle'
 import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
-import { Route as ApiTranslationIndexRouteImport } from './routes/api/translation/index'
 import { Route as ApiConversationsIndexRouteImport } from './routes/api/conversations/index'
 import { Route as DemoSentryTestingRouteImport } from './routes/demo/sentry.testing'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -59,11 +58,6 @@ const DemoDrizzleRoute = DemoDrizzleRouteImport.update({
 const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
   id: '/demo/better-auth',
   path: '/demo/better-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiTranslationIndexRoute = ApiTranslationIndexRouteImport.update({
-  id: '/api/translation/',
-  path: '/api/translation/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiConversationsIndexRoute = ApiConversationsIndexRouteImport.update({
@@ -119,7 +113,6 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations/': typeof ApiConversationsIndexRoute
-  '/api/translation/': typeof ApiTranslationIndexRoute
   '/api/translate/audio/stream': typeof ApiTranslateAudioStreamRoute
   '/api/translate/audio/tts': typeof ApiTranslateAudioTtsRoute
   '/api/conversations/$id/': typeof ApiConversationsIdIndexRoute
@@ -137,7 +130,6 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations': typeof ApiConversationsIndexRoute
-  '/api/translation': typeof ApiTranslationIndexRoute
   '/api/translate/audio/stream': typeof ApiTranslateAudioStreamRoute
   '/api/translate/audio/tts': typeof ApiTranslateAudioTtsRoute
   '/api/conversations/$id': typeof ApiConversationsIdIndexRoute
@@ -156,7 +148,6 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/sentry/testing': typeof DemoSentryTestingRoute
   '/api/conversations/': typeof ApiConversationsIndexRoute
-  '/api/translation/': typeof ApiTranslationIndexRoute
   '/api/translate/audio/stream': typeof ApiTranslateAudioStreamRoute
   '/api/translate/audio/tts': typeof ApiTranslateAudioTtsRoute
   '/api/conversations/$id/': typeof ApiConversationsIdIndexRoute
@@ -176,7 +167,6 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/demo/sentry/testing'
     | '/api/conversations/'
-    | '/api/translation/'
     | '/api/translate/audio/stream'
     | '/api/translate/audio/tts'
     | '/api/conversations/$id/'
@@ -194,7 +184,6 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/demo/sentry/testing'
     | '/api/conversations'
-    | '/api/translation'
     | '/api/translate/audio/stream'
     | '/api/translate/audio/tts'
     | '/api/conversations/$id'
@@ -212,7 +201,6 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/demo/sentry/testing'
     | '/api/conversations/'
-    | '/api/translation/'
     | '/api/translate/audio/stream'
     | '/api/translate/audio/tts'
     | '/api/conversations/$id/'
@@ -231,7 +219,6 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   DemoSentryTestingRoute: typeof DemoSentryTestingRoute
   ApiConversationsIndexRoute: typeof ApiConversationsIndexRoute
-  ApiTranslationIndexRoute: typeof ApiTranslationIndexRoute
   ApiTranslateAudioStreamRoute: typeof ApiTranslateAudioStreamRoute
   ApiTranslateAudioTtsRoute: typeof ApiTranslateAudioTtsRoute
   ApiConversationsIdIndexRoute: typeof ApiConversationsIdIndexRoute
@@ -288,13 +275,6 @@ declare module '@tanstack/react-router' {
       path: '/demo/better-auth'
       fullPath: '/demo/better-auth'
       preLoaderRoute: typeof DemoBetterAuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/translation/': {
-      id: '/api/translation/'
-      path: '/api/translation'
-      fullPath: '/api/translation/'
-      preLoaderRoute: typeof ApiTranslationIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/conversations/': {
@@ -367,7 +347,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   DemoSentryTestingRoute: DemoSentryTestingRoute,
   ApiConversationsIndexRoute: ApiConversationsIndexRoute,
-  ApiTranslationIndexRoute: ApiTranslationIndexRoute,
   ApiTranslateAudioStreamRoute: ApiTranslateAudioStreamRoute,
   ApiTranslateAudioTtsRoute: ApiTranslateAudioTtsRoute,
   ApiConversationsIdIndexRoute: ApiConversationsIdIndexRoute,

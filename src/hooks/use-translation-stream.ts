@@ -15,7 +15,7 @@ export function useTranslationStream() {
 	const startStream = useCallback(
 		async (
 			audioBlob: Blob,
-			nativeLanguage: string,
+			primaryLanguage: string,
 			secondaryLanguage: string,
 			onUserTranscript: (text: string) => void,
 			onDetectedLanguage: (language: string, isUserNative: boolean) => void,
@@ -23,8 +23,8 @@ export function useTranslationStream() {
 			onDone: (result: {
 				userTranscript: string;
 				translatedText: string;
-				detectedLanguage: string;
-				isUserSpeakingNative: boolean;
+				sourceLang: string;
+				targetLang: string;
 			}) => void,
 			onError: (err: Error) => void,
 		) => {
@@ -43,7 +43,7 @@ export function useTranslationStream() {
 								},
 							);
 				formData.append("audio", audioFile);
-				formData.append("nativeLanguage", nativeLanguage);
+				formData.append("primaryLanguage", primaryLanguage);
 				formData.append("secondaryLanguage", secondaryLanguage);
 
 				const abortController = new AbortController();
