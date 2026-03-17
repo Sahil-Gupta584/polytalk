@@ -108,17 +108,22 @@ export default function Translation() {
 		useTranslationStream();
 	const {
 		isListening,
+		isRecording,
 		setIsProcessing: setIsVoiceProcessing,
 		startListening,
 		stopListening,
+		startManualRecording,
+		stopManualRecording,
 	} = useVoiceDetection({
+		mode: "manual",
+		paddingDuration: 2000, // 2 seconds of audio padding
 		onVoiceStart: () => {
 			setLiveTranscript("");
 			setLiveTranslation("");
 			setStatus("recording");
 		},
 		onVoiceEnd: (audioBlob) => {
-			// setStatus("processing");
+			setStatus("processing");
 			void processAudio(audioBlob);
 		},
 		onLevelChange: (level) => {
@@ -210,9 +215,9 @@ export default function Translation() {
 						...current,
 						{
 							id: crypto.randomUUID(),
-							translatedText: result.userTranscript,
+							translatedText: result.translatedText,
 							timestamp: new Date(),
-							lang:result.sourceLang
+							lang: result.sourceLang,
 						},
 					]);
 					window.setTimeout(() => {
@@ -221,8 +226,8 @@ export default function Translation() {
 
 					if (result.translatedText.trim()) {
 						void playTranslatedAudio(
-							result.userTranscript,
-							result.sourceLang,
+							result.translatedText,
+							result.targetLang,
 							targetSpeaker,
 						);
 					}
@@ -284,10 +289,7 @@ export default function Translation() {
 
 		try {
 			const targetLocale = langToLocale(secondaryLanguage);
-			const shouldUseBrowserVoice = window.speechSynthesis
-				.getVoices()
-				.some((voice) => voiceMatchesLanguage(voice, secondaryLanguage));
-			console.log(window.speechSynthesis.getVoices(), { secondaryLanguage });
+			const shouldUseBrowserVoice = false
 
 			if (!shouldUseBrowserVoice || targetSpeaker !== "default") {
 				console.debug("[TTS] falling back to Google", {
@@ -362,38 +364,57 @@ export default function Translation() {
 			window.speechSynthesis.speak(utterance);
 		} catch (error) {
 			console.error("Error playing translated audio:", error);
+		}finally{
+			setStatus('idle')
 		}
 	};
 
-	const toggleListening = async () => {
-		if (isListening) {
-			stopListening();
-			setStatus("idle");
-			return;
-		}
-
-		if (!langA || !langB || getLanguageCode(langA) === getLanguageCode(langB)) {
-			toast({
-				title: "Language Setup Required",
-				description: "Choose two different languages before recording.",
-				variant: "destructive",
-			});
-			return;
-		}
-
-		try {
-			if (!hasPermission) {
-				await requestPermission();
+	const handleRecordButtonDown = async () => {
+		if (!isListening) {
+			// Initialize listening first
+			if (
+				!langA ||
+				!langB ||
+				getLanguageCode(langA) === getLanguageCode(langB)
+			) {
+				toast({
+					title: "Language Setup Required",
+					description: "Choose two different languages before recording.",
+					variant: "destructive",
+				});
+				return;
 			}
 
-			const activeMic = activeSide === "A" ? micA : micB;
-			await startListening(activeMic);
-		} catch {
-			toast({
-				title: "Microphone Error",
-				description: "Could not access microphone.",
-				variant: "destructive",
-			});
+			try {
+				if (!hasPermission) {
+					await requestPermission();
+				}
+
+				const activeMic = activeSide === "A" ? micA : micB;
+				await startListening(activeMic);
+			} catch {
+				toast({
+					title: "Microphone Error",
+					description: "Could not access microphone.",
+					variant: "destructive",
+				});
+				return;
+			}
+		}
+
+		// Start recording when button is pressed
+		await startManualRecording();
+	};
+
+	const handleRecordButtonUp = async () => {
+		// Stop recording when button is released
+		await stopManualRecording();
+	};
+
+	const handleRecordButtonLeave = async () => {
+		// If user dragged away from button while holding, stop recording
+		if (isRecording) {
+			await stopManualRecording();
 		}
 	};
 
@@ -567,14 +588,19 @@ export default function Translation() {
 
 				{/* Hint */}
 				<p className="text-[10px] text-white/50 uppercase tracking-widest h-3">
-					Tap to &nbsp;
-					{status === "recording" ? "stop" : "speak"}
+					{isRecording
+						? "Release to send"
+						: `Tap and hold to speak in ${activeSide === "A" ? langA : langB}`}
 				</p>
 
 				{/* Record button */}
 				<button
-					onClick={toggleListening}
-					disabled={status === "processing"}
+					onMouseDown={handleRecordButtonDown}
+					onMouseUp={handleRecordButtonUp}
+					onMouseLeave={handleRecordButtonLeave}
+					onTouchStart={handleRecordButtonDown}
+					onTouchEnd={handleRecordButtonUp}
+					disabled={false}
 					data-testid="button-record"
 					className={` cursor-pointer
 			relative flex items-center justify-center w-[72px] h-[72px] rounded-full
@@ -582,17 +608,17 @@ export default function Translation() {
 			${
 				status === "processing"
 					? "opacity-30 cursor-not-allowed scale-90 bg-white/10"
-					: status === "recording"
+					: isRecording
 						? "scale-110 bg-rose-500 shadow-[0_0_0_10px_rgba(244,63,94,0.12),0_0_32px_rgba(244,63,94,0.25)]"
 						: "bg-white hover:scale-[1.04] active:scale-95 shadow-[0_2px_32px_rgba(255,255,255,0.08)]"
 			}
 		  `}
 				>
-					{status === "recording" && (
+					{isRecording && (
 						<span className="absolute inset-0 rounded-full border-2 border-rose-400 animate-ping opacity-40" />
 					)}
 					<Mic
-						className={`w-7 h-7 ${status === "recording" ? "text-white" : "text-zinc-950"}`}
+						className={`w-7 h-7 ${isRecording ? "text-white" : "text-zinc-950"}`}
 					/>
 				</button>
 			</div>

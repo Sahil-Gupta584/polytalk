@@ -1,5 +1,4 @@
 import { LingoDotDevEngine } from "lingo.dev/sdk";
-import { env } from "../env";
 
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
 
@@ -25,7 +24,7 @@ export async function translateText(
 	const response = await fetch("https://api.lingo.dev/process/localize", {
 		method: "POST",
 		headers: {
-			"X-API-Key": env.LINGODOTDEV_API_KEY,
+			"X-API-Key": process.env.LINGODOTDEV_API_KEY!,
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({
@@ -54,7 +53,7 @@ export async function translateText(
 
 export async function detectLanguageFromTranscript(transcript: string) {
 	const lingoDotDev = new LingoDotDevEngine({
-		apiKey: env.LINGODOTDEV_API_KEY,
+		apiKey: process.env.LINGODOTDEV_API_KEY,
 	});
 	const locale = await lingoDotDev.recognizeLocale(transcript);
 	console.log("[detectLanguageFromTranscript]", { transcript, locale });

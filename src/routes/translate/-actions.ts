@@ -29,7 +29,7 @@ export function getLangFlag(name: string) {
 	return LANGUAGES.find((l) => l.name === name)?.flag ?? "US";
 }
 
-export function getLangFlagUrl(name: string) {
-	const code = getLangFlag(name);
+export function getLangFlagUrl(name: string, isCode?: boolean) {
+	const code = isCode ? name : getLangFlag(name);
 	return `https://flagsapi.com/${code}/flat/64.png`;
 }

@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import LanguageDetect from "languagedetect";
-import OpenAI from "openai";
-import { storage } from "#/db/storage";
 import { codeToName, translateText } from "#/lib/translation/client";
 
 const languageDetector = new LanguageDetect();
@@ -130,20 +128,6 @@ export const Route = createFileRoute("/api/translate/audio/")({
 						sourceLanguage,
 						targetLanguage,
 					);
-
-					void storage
-						.createTranslation({
-							sourceLanguage,
-							targetLanguage,
-							sourceText: userTranscript,
-							translatedText,
-						})
-						.catch((storageError) => {
-							console.error(
-								"[audio translate] failed to store translation",
-								storageError,
-							);
-						});
 
 					return new Response(
 						JSON.stringify({

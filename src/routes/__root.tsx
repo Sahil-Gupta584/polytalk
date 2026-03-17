@@ -50,7 +50,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<TanStackQueryProvider>
 					{children}
 					<div className="fixed bottom-4 right-4 z-[60]">
-						<ThemeToggle />
+						{/* <ThemeToggle /> */}
 					</div>
 				</TanStackQueryProvider>
 				<Scripts />

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { getLangFlagUrl } from "./translate/-actions";
 
 /* ─────────────────────────────────────────────────── */
 /*  Static page data                                   */
@@ -49,32 +50,40 @@ const DEMO_CONVERSATIONS = [
 	{
 		fromFlag: "🇯🇵",
 		fromLang: "Japanese",
+		fromCountryCode: "JP",
 		toFlag: "🇬🇧",
 		toLang: "English",
+		toCountryCode: "GB",
 		sourceText: "すみません、近くに駅はありますか？",
 		translatedText: "Excuse me, is there a train station nearby?",
 	},
 	{
 		fromFlag: "🇬🇧",
 		fromLang: "English",
+		fromCountryCode: "GB",
 		toFlag: "🇯🇵",
 		toLang: "Japanese",
+		toCountryCode: "JP",
 		sourceText: "Yes, it's two blocks straight ahead.",
 		translatedText: "はい、真っ直ぐ2ブロック先にあります。",
 	},
 	{
 		fromFlag: "🇪🇸",
 		fromLang: "Spanish",
+		fromCountryCode: "ES",
 		toFlag: "🇬🇧",
 		toLang: "English",
+		toCountryCode: "GB",
 		sourceText: "¿Cuánto cuesta este plato?",
 		translatedText: "How much does this dish cost?",
 	},
 	{
 		fromFlag: "🇬🇧",
 		fromLang: "English",
+		fromCountryCode: "GB",
 		toFlag: "🇸🇦",
 		toLang: "Arabic",
+		toCountryCode: "SA",
 		sourceText: "Two coffees please, no sugar.",
 		translatedText: "قهوتين من فضلك، بدون سكر.",
 	},
@@ -207,7 +216,11 @@ function AppPreviewDemo() {
 							Person A
 						</div>
 						<div className="flex items-center gap-1.5 mb-2">
-							<span className="text-lg leading-none">{conv.fromFlag}</span>
+							<img
+								src={getLangFlagUrl(conv.fromCountryCode.toLocaleUpperCase(),true)}
+								alt=""
+								className="h-6 w-6 rounded-full object-cover"
+							/>
 							<span className="text-xs font-semibold text-white/80 truncate">
 								{conv.fromLang}
 							</span>
@@ -234,10 +247,12 @@ function AppPreviewDemo() {
 							Person B
 						</div>
 						<div className="flex items-center gap-1.5 mb-2">
-							<span className="text-lg leading-none">{conv.toFlag}</span>
-							<span className="text-xs font-semibold text-white/80 truncate">
-								{conv.toLang}
-							</span>
+							<img
+								src={getLangFlagUrl(conv.toCountryCode.toLocaleUpperCase(),true)}
+								alt=""
+								className="h-6 w-6 rounded-full object-cover"
+							/>
+							<span className="text-lg text-sm leading-none">{conv.toLang}</span>
 						</div>
 						<div className="h-px bg-white/[0.06] mb-2" />
 						<div className="flex items-center gap-1 text-[9px] text-white/25">
